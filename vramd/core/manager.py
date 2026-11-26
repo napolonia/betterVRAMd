@@ -13,6 +13,8 @@ from vramd.models.cache import RAMCacheManager
 from vramd.monitor.system import SystemMonitor
 from vramd.monitor.gpu import GPUMonitor
 
+from vramd.models.metadata import ModelMetadataInspector
+from vramd.models.estimator import ModelMemoryEstimator
 
 class ManagerState(str, Enum):
     STOPPED = "stopped"
@@ -51,9 +53,14 @@ class VRAMdManager:
 
         self.ram_cache = RAMCacheManager()
 
+        self.metadata_inspector = ModelMetadataInspector(
+            self.config
+        )
+
         self.lifecycle = LifecycleController(
             registry=self.model_registry,
             cache=self.ram_cache,
+            metadata_inspector=self.metadata_inspector,
         )
 
         # Inference scheduling.
@@ -82,6 +89,8 @@ class VRAMdManager:
         self.budget_calculator = ResourceBudgetCalculator(
             self.config
         )
+
+        self.memory_estimator = ModelMemoryEstimator()
 
     def register_component(
         self,
@@ -219,3 +228,20 @@ class VRAMdManager:
             system=status["system"],
             gpu=status["gpu"],
         )
+    def estimate_model_memory(
+        self,
+        name: str,
+        gpu_layers: int = 0,
+    ) -> dict:
+        """Estimate model memory requirements without loading it."""
+
+        metadata = self.lifecycle.inspect_model(name)
+        budget = self.get_resource_budget()
+
+        estimate = self.memory_estimator.estimate(
+            metadata=metadata,
+            budget=budget,
+            gpu_layers=gpu_layers,
+        )
+
+        return self.memory_estimator.to_dict(estimate)

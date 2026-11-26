@@ -361,3 +361,14 @@ RAMCacheManager: implemented, not yet integration-tested.
 LifecycleController: initial implementation, not yet reviewed or tested.
 InferenceScheduler: initial implementation, not yet reviewed or tested.
 VRAMdManager integration: initial implementation, not yet tested.
+
+Model Metadata and Memory Estimation
+GGUF metadata inspection uses the Python tooling bundled with the configured custom llama.cpp build.
+The configured llama.cpp installation is the authoritative source for GGUF tooling.
+Metadata inspection must not load model weights into RAM or VRAM.
+Tensor descriptions and storage sizes are used for preliminary memory estimates.
+ModelMemoryEstimator compares estimated requirements against ResourceBudget.
+CPU, hybrid and GPU execution modes are considered.
+GPU-layer estimates are preliminary and proportional estimates are not guaranteed to match actual llama.cpp tensor placement.
+KV cache, context buffers and backend runtime overhead must be accounted for before production loading decisions.
+No memory estimate alone authorizes model loading or GPU allocation.

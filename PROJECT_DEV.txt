@@ -2,88 +2,48 @@ PROJECT_DEV.txt
 
 Last updated: 2026-11-26
 
-1. CURRENT STATUS
+CURRENT DEVELOPMENT STATUS
 
-Project: betterVRAMd Phase: 1 — Core infrastructure Platform: Linux / WSL2
+Phase: 1 — Core infrastructure Status: Implementation in progress Testing: Deferred until architecture completion
 
 Implemented (not yet tested)
+Core
 vramd/core/config.py — Configuration management
-vramd/core/manager.py — Central manager and initial component integration
+vramd/core/manager.py — Central manager and initial service integration
 vramd/core/budget.py — Resource budget calculator
 vramd/core/lifecycle.py — Initial lifecycle controller
 vramd/core/scheduler.py — Initial inference scheduler
+Models
 vramd/models/registry.py — Model registry
-vramd/models/cache.py — RAM cache manager
-Existing infrastructure
-System monitor
-GPU monitor
-llama.cpp adapter
-Worker process
-CLI structure
-Application entry point
+vramd/models/cache.py — RAM cache using mmap
+vramd/models/metadata.py — GGUF metadata inspection using bundled llama.cpp tooling
+vramd/models/estimator.py — Preliminary RAM/VRAM estimation
+Integration
+VRAMdManager owns registry, cache, metadata inspector and scheduler.
+LifecycleController receives registry, cache and metadata inspector through dependency injection.
+ModelMemoryEstimator is integrated into VRAMdManager.
 
-Existing infrastructure still requires implementation review and integration.
+IMPORTANT: All newly implemented modules and integrations remain untested. Memory estimates are preliminary and must not be treated as guaranteed loading limits.
 
-2. ARCHITECTURE DECISIONS
-VRAMdManager owns ModelRegistry and RAMCacheManager.
-VRAMdManager owns LifecycleController and InferenceScheduler.
-LifecycleController receives registry and cache references through dependency injection.
-Model registration never automatically loads models.
-Application startup never automatically warms model pages.
-No GPU allocation while idle.
-RAM caching uses mmap.
-No mlock by default.
-Inference execution belongs to the worker subsystem.
-
-See PROJECT_CONTEXT.txt for complete architecture.
-
-3. NEXT DEVELOPMENT STEPS
-
-Continue implementation without running tests or inference.
-
-Implement model metadata inspection.
-Implement inference request representation and validation.
-Review and refine InferenceScheduler.
+NEXT DEVELOPMENT STEPS
+Review and improve model memory estimation accuracy.
+Implement automatic GPU-layer selection.
 Review and refine LifecycleController.
+Review and refine InferenceScheduler.
+Implement inference request validation.
 Implement resource-aware loading decisions.
 Implement separate worker process.
-Implement llama.cpp backend adapter.
+Complete llama.cpp backend integration.
 Integrate inference queue and worker.
-Implement model loading and unloading coordination.
-Complete CLI commands.
+Implement model loading/unloading coordination.
+Complete CLI.
 Complete application entry point.
 Implement logging and error handling.
 Review integrated architecture.
 Update documentation.
 Conduct controlled final testing.
-4. DEVELOPMENT RULES
-One logical development stage at a time.
-Complete architecture before testing.
-Clearly identify CREATE vs EDIT.
-Always provide exact file paths.
-Provide complete copy-paste-ready files.
-Preserve existing working code.
-Never assume a placeholder is implemented.
-Never recreate the virtual environment.
-Avoid unnecessary dependencies.
-Avoid loading large models during development.
-Keep responses concise.
-5. CURRENT NEXT ACTION
+CURRENT NEXT ACTION
 
-Implement model metadata inspection.
+Implement automatic GPU-layer selection based on available RAM/VRAM budgets.
 
-Expected location: vramd/models/metadata.py
-
-Requirements:
-
-Inspect GGUF metadata.
-Extract architecture and model information.
-Extract context length where available.
-Extract tensor and parameter information where available.
-Avoid loading model weights into RAM.
-Avoid GPU allocation.
-Handle malformed or unsupported GGUF files gracefully.
-
-Do not run tests yet.
-
-PROJECT: betterVRAMd PHASE: 1 CURRENT MILESTONE: Core infrastructure NEXT MODULE: Model Metadata Inspection
+No model loading, inference, GPU allocation or testing during implementation.

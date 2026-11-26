@@ -42,3 +42,10 @@ Postpone testing until architecture implementation is complete.
 Final testing must be controlled and resource-conscious.
 Separate unit, integration and GPU/inference testing.
 Never load large models unnecessarily during development.
+
+Memory estimation safety
+Never treat preliminary memory estimates as guaranteed capacity.
+Account for KV cache and runtime overhead.
+Prefer conservative estimates.
+Never automatically load a model based solely on estimated capacity.
+Preserve the custom llama.cpp build and WSL2 / sm_61 compatibility.
