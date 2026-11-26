@@ -2,28 +2,43 @@ PROJECT_WORKFLOW.txt
 Development approach
 Implement the complete architecture before starting testing.
 Do not run tests after every module.
-Testing and integration happen in a dedicated final phase.
+Testing happens in a dedicated final phase.
 Develop one logical module at a time.
+Prefer complete implementations over temporary experiments.
 System constraints
-Development machine has a GTX 1050 4GB.
+Development machine: GTX 1050 4GB.
 Limited system resources.
 VS Code, Chrome and other applications run alongside development.
 Avoid unnecessary memory consumption and background processes.
 Never run inference or load large models during development unless explicitly requested.
+Avoid operations that could freeze or destabilize the system.
 Coding rules
 Provide complete, copy-paste-ready files.
 Clearly identify CREATE vs EDIT.
+Always provide exact file paths.
 Preserve existing working code.
 Avoid unnecessary dependencies.
-Explain architectural decisions briefly.
 Never assume existing code without checking it.
+Never recreate the existing virtual environment.
+Explain architectural decisions briefly.
+Architecture and documentation
+GitHub repository is the shared project reference.
+PROJECT_CONTEXT.txt documents stable architecture and decisions.
+PROJECT_DEV.txt tracks implementation progress.
+PROJECT_WORKFLOW.txt defines collaboration and development rules.
+Update documentation after significant implementation or architectural decisions.
+Never mark untested or unintegrated code as fully completed.
+Preserve important decisions to avoid confusion in future chats.
 Communication preferences
 Be concise and technical.
 Avoid lengthy explanations.
 One development step at a time.
 No unnecessary repetition.
-Ask when essential information is missing.
+Do not ask for information already provided.
+Consult existing project documentation before asking questions.
+Ask only when essential information is missing.
 Testing policy
-Postpone testing until implementation is complete.
+Postpone testing until architecture implementation is complete.
 Final testing must be controlled and resource-conscious.
 Separate unit, integration and GPU/inference testing.
+Never load large models unnecessarily during development.

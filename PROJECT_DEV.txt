@@ -1,72 +1,107 @@
-Last updated: 2026-11-26 14:36:28 WET
+PROJECT_DEV.txt
+1. CURRENT DEVELOPMENT STATUS
 
+Project: betterVRAMd
+Platform: Linux / WSL2
+Phase: 1 — Core infrastructure
+Status: Architecture implementation in progress
 
-1. NEXT DEVELOPMENT STEPS
+Implemented files (not yet tested)
+vramd/models/registry.py — ModelRegistry
+vramd/models/cache.py — RAMCacheManager
+vramd/core/manager.py — VRAMdManager
+vramd/core/config.py — Configuration management
+vramd/core/lifecycle.py — LifecycleController
+vramd/core/scheduler.py — InferenceScheduler
 
-Continue implementation without running inference.
+Existing infrastructure:
 
-Next immediate task:
+System monitor
+GPU monitor
+Resource budget calculator
+llama.cpp adapter placeholder
+Worker process placeholder
+CLI structure
+Application entry point
 
-RAM CACHE MANAGER
+IMPORTANT: Existing files are not necessarily fully implemented or integrated. No tests have been run on the newly implemented cache, lifecycle or scheduler modules.
 
-File: vramd/models/cache.py
+2. ARCHITECTURE DECISIONS
+Component ownership
+VRAMdManager owns ModelRegistry.
+VRAMdManager owns RAMCacheManager.
+LifecycleController receives references to both through dependency injection.
+InferenceScheduler manages inference request ordering.
+Worker subsystem executes inference requests.
+Model lifecycle
 
-Responsibilities:
+Registration must never automatically load models.
 
-Open model files using mmap.
-Track mapped models.
-Optional page warming.
-Track cached model state.
-Release mappings when requested.
-Avoid mlock by default.
-Never allocate GPU resources.
+Application startup must never automatically:
 
-After that:
+Load GGUF files into RAM.
+Warm model pages.
+Allocate GPU resources.
 
-Connect ModelRegistry and ModelCache to manager.
+Model states currently include:
+
+Registered
+Cached
+
+Future inference states and GPU lifecycle states must be handled separately.
+
+Memory management
+Use mmap for model files.
+Avoid unnecessary memory copies.
+No mlock by default.
+Page warming must be optional.
+GPU resources must be released after inference.
+Verify actual VRAM reclamation where supported.
+3. NEXT DEVELOPMENT STEPS
+
+Continue implementation without running tests or inference.
+
+Integrate ModelRegistry and RAMCacheManager into VRAMdManager.
+Review and refine LifecycleController.
+Review and refine InferenceScheduler.
 Implement model metadata inspection.
-Implement inference request representation.
-Implement loading scheduler.
-Implement lifecycle controller.
+Implement inference request representation and validation.
+Implement resource-aware loading scheduler.
 Implement separate worker process.
 Implement llama.cpp backend adapter.
-Implement inference queue.
-Implement CLI.
-Implement application entry point.
+Implement inference execution and queue integration.
+Implement model loading and unloading coordination.
+Complete CLI commands.
+Complete application entry point.
 Add logging and error handling.
 Review integrated architecture.
-Conduct controlled end-to-end tests.
-
-
-2. DEVELOPMENT RULES
-
-IMPORTANT FOR FUTURE CHAT:
-
+Update documentation.
+Conduct controlled final testing.
+4. DEVELOPMENT RULES
 One logical development stage at a time.
-Prefer implementing complete modules rather than isolated experiments.
-Avoid unnecessary inference tests during implementation.
-Clearly identify every file operation as CREATE or EDIT.
-Give exact file paths.
-Provide complete code blocks where practical.
-Keep code blocks self-contained to avoid indentation/copy-paste errors.
-Never assume a placeholder file is implemented.
+Implement architecture before testing.
+Clearly identify CREATE vs EDIT.
+Always provide complete file paths.
+Provide complete copy-paste-ready files.
+Preserve existing working code.
+Never assume an empty file is implemented.
 Never recreate the existing virtual environment.
-Preserve working code.
-Explain architectural changes briefly.
-Maintain this project summary when significant changes occur.
-Keep responses concise.
-Do not overwhelm the user with excessive explanations.
+Avoid unnecessary dependencies.
+Do not run inference during implementation.
+Keep memory usage low during development.
+5. CURRENT NEXT ACTION
 
-3. IMMEDIATE NEXT ACTION
+Integrate the following components into VRAMdManager:
 
-Implement:
+ModelRegistry
+RAMCacheManager
+LifecycleController
+InferenceScheduler
 
-vramd/models/cache.py
+Respect the agreed ownership architecture.
 
-Build a safe RAM cache manager based on mmap, with optional page warming and explicit cache lifecycle management.
+Do not automatically load or warm models during manager startup.
 
-Do not run inference.
+Do not run tests yet.
 
-The immediate goal is to finish the architecture and implementation before integrated testing.
-
-PROJECT: betterVRAMd PHASE: 1 PLATFORM: Linux / WSL2 CURRENT MILESTONE: Core infrastructure and model management NEXT MODULE: RAM Cache Manager
+The immediate goal is to complete the architecture before beginning controlled integration and testing.
