@@ -209,10 +209,41 @@ MANAGER:
 Coordinate component startup and shutdown.
 Own component lifecycle.
 Expose application status.
+
 6. EXISTING PROJECT STRUCTURE
 
-betterVRAMd/ ├── config/ │ └── default.toml ├── tests/ │ └── init.py ├── gpu_probe.py ├── vramd/ │ ├── init.py │ ├── main.py │ ├── core/ │ │ ├── init.py │ │ ├── config.py │ │ ├── manager.py │ │ ├── scheduler.py │ │ ├── lifecycle.py │ │ └── budget.py │ ├── monitor/ │ │ ├── init.py │ │ ├── gpu.py │ │ └── system.py │ ├── models/ │ │ ├── init.py │ │ ├── registry.py │ │ └── cache.py │ ├── worker/ │ │ ├── init.py │ │ └── process.py │ ├── inference/ │ │ ├── init.py │ │ └── llama_cpp.py │ └── cli/ │ ├── init.py │ └── commands.py └── .venv/
-
+betterVRAMd/
+├── PROJECT_CONTEXT.txt
+├── PROJECT_DEV.txt
+├── PROJECT_WORKFLOW.txt
+├── config/
+│   └── default.toml
+├── scripts/
+│   └── update_dev.py
+├── tests/
+└── vramd/
+    ├── cli/
+    │   ├── __init__.py
+    │   └── commands.py
+    ├── core/
+    │   ├── budget.py
+    │   ├── config.py
+    │   ├── lifecycle.py
+    │   ├── manager.py
+    │   └── scheduler.py
+    ├── inference/
+    │   └── llama_cpp.py
+    ├── models/
+    │   ├── cache.py
+    │   ├── estimator.py
+    │   ├── metadata.py
+    │   └── registry.py
+    ├── monitor/
+    │   ├── gpu.py
+    │   └── system.py
+    ├── worker/
+    │   └── process.py
+    └── main.py
 Note: Some files were created as empty placeholders. Do not assume they are implemented.
 
 7. IMPLEMENTATION STATUS
@@ -323,14 +354,6 @@ This avoids rewriting the entire project context every time we make progress.
 3. Update `PROJECT_DEV.txt`.
 4. Keep `PROJECT_CONTEXT.txt` mostly unchanged unless architecture or environment changes.
 
-Current development position:
-
-- Configuration: implemented.
-- Manager: implemented.
-- System/GPU monitors: implemented.
-- Resource budgeting: implemented.
-- Model registry: implemented.
-- Next: RAM cache manager (`vramd/models/cache.py`).
 
 Component Ownership and Integration
 VRAMdManager
@@ -361,6 +384,20 @@ RAMCacheManager: implemented, not yet integration-tested.
 LifecycleController: initial implementation, not yet reviewed or tested.
 InferenceScheduler: initial implementation, not yet reviewed or tested.
 VRAMdManager integration: initial implementation, not yet tested.
+
+ModelMetadataInspector:
+Owned by VRAMdManager.
+Uses the Python GGUF tooling bundled with the custom llama.cpp build.
+Performs read-only metadata inspection.
+
+ModelMemoryEstimator:
+Owned by VRAMdManager.
+Compares preliminary model memory estimates against ResourceBudget.
+Does not allocate resources.
+
+LifecycleController:
+Receives ModelRegistry, RAMCacheManager and
+ModelMetadataInspector through dependency injection.
 
 Model Metadata and Memory Estimation
 GGUF metadata inspection uses the Python tooling bundled with the configured custom llama.cpp build.

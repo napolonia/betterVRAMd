@@ -1,51 +1,91 @@
 PROJECT_WORKFLOW.txt
-Development approach
-Implement the complete architecture before starting testing.
-Do not run tests after every module.
-Testing happens in a dedicated final phase.
-Develop one logical module at a time.
-Prefer complete implementations over temporary experiments.
-System constraints
-Development machine: GTX 1050 4GB.
-Limited system resources.
-VS Code, Chrome and other applications run alongside development.
-Avoid unnecessary memory consumption and background processes.
-Never run inference or load large models during development unless explicitly requested.
-Avoid operations that could freeze or destabilize the system.
-Coding rules
-Provide complete, copy-paste-ready files.
-Clearly identify CREATE vs EDIT.
-Always provide exact file paths.
+betterVRAMd — Development Workflow
+1. DEVELOPMENT APPROACH
+Implement the architecture before starting testing.
+Work on one logical development task at a time.
+Avoid unnecessary experiments and temporary implementations.
+Keep development incremental and controlled.
+Update documentation after significant architectural decisions.
+2. CODING RULES
+CREATE: Provide the complete new file.
+EDIT: Provide only the specific additions, removals or replacements.
+Always specify the exact file path.
 Preserve existing working code.
+Never assume a file's contents without checking.
+Never assume code was saved or implemented without confirmation.
 Avoid unnecessary dependencies.
-Never assume existing code without checking it.
-Never recreate the existing virtual environment.
-Explain architectural decisions briefly.
-Architecture and documentation
-GitHub repository is the shared project reference.
-PROJECT_CONTEXT.txt documents stable architecture and decisions.
-PROJECT_DEV.txt tracks implementation progress.
-PROJECT_WORKFLOW.txt defines collaboration and development rules.
-Update documentation after significant implementation or architectural decisions.
-Never mark untested or unintegrated code as fully completed.
-Preserve important decisions to avoid confusion in future chats.
-Communication preferences
-Be concise and technical.
-Avoid lengthy explanations.
-One development step at a time.
-No unnecessary repetition.
-Do not ask for information already provided.
-Consult existing project documentation before asking questions.
-Ask only when essential information is missing.
-Testing policy
-Postpone testing until architecture implementation is complete.
+Never recreate the existing virtual environment unnecessarily.
+Keep explanations concise.
+Do not repeat unchanged code.
+3. SYSTEM RESOURCE CONSTRAINTS
+
+Development machine:
+
+GPU: NVIDIA GTX 1050, 4 GB VRAM.
+Platform: Linux / WSL2.
+Backend: Custom llama.cpp build targeting sm_61.
+RAM: 16 GB physical memory.
+
+VS Code, Chrome and other applications run alongside development.
+
+Therefore:
+
+Avoid unnecessary background processes.
+Avoid loading large GGUF models during development.
+Avoid unnecessary RAM and VRAM consumption.
+Never run inference unless explicitly requested.
+Do not perform expensive operations during implementation.
+Avoid actions that could freeze or destabilize the system.
+4. TESTING POLICY
+Testing is deferred until architecture implementation is complete.
+Do not run tests after every module.
+Do not execute inference during implementation.
 Final testing must be controlled and resource-conscious.
 Separate unit, integration and GPU/inference testing.
-Never load large models unnecessarily during development.
+Test with smaller models before attempting larger models.
+5. ARCHITECTURE RULES
+Respect decisions documented in PROJECT_CONTEXT.txt.
+Track implementation progress in PROJECT_DEV.txt.
+Do not duplicate responsibilities between modules.
+Prefer dependency injection where appropriate.
+Keep model registration separate from model loading.
+Never automatically load or warm models at application startup.
+Memory estimates are not guarantees of available capacity.
+Account for KV cache and runtime overhead before actual loading decisions.
+Preserve compatibility with the custom llama.cpp build.
+6. DOCUMENTATION AND GIT
 
-Memory estimation safety
-Never treat preliminary memory estimates as guaranteed capacity.
-Account for KV cache and runtime overhead.
-Prefer conservative estimates.
-Never automatically load a model based solely on estimated capacity.
-Preserve the custom llama.cpp build and WSL2 / sm_61 compatibility.
+Three documentation files have distinct responsibilities:
+
+PROJECT_CONTEXT.txt — Stable architecture and technical decisions.
+PROJECT_DEV.txt — Current implementation status and roadmap.
+PROJECT_WORKFLOW.txt — Development and collaboration rules.
+
+After significant changes:
+
+Update the relevant documentation.
+Review the changes.
+Commit and push to GitHub.
+
+Never mark untested code as verified or production-ready.
+
+7. COMMUNICATION PREFERENCES
+Be concise and technical.
+One step at a time.
+Avoid lengthy explanations.
+Do not ask questions whose answers are already documented.
+Explain important architectural decisions briefly.
+Wait for confirmation before moving to the next task.
+8. NEW CHAT CONTINUITY
+
+At the beginning of a new chat:
+
+Read all three project documentation files.
+Check the actual repository structure.
+Verify the current implementation before proposing changes.
+Identify the next unfinished task.
+Continue without repeating completed work.
+
+If information is missing, ask only for the specific file or detail needed.
+
+PROJECT: betterVRAMd DEVELOPMENT STYLE: Incremental, resource-conscious, implementation first.
