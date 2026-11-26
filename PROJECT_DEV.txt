@@ -1,107 +1,89 @@
 PROJECT_DEV.txt
-1. CURRENT DEVELOPMENT STATUS
 
-Project: betterVRAMd
-Platform: Linux / WSL2
-Phase: 1 — Core infrastructure
-Status: Architecture implementation in progress
+Last updated: 2026-11-26
 
-Implemented files (not yet tested)
-vramd/models/registry.py — ModelRegistry
-vramd/models/cache.py — RAMCacheManager
-vramd/core/manager.py — VRAMdManager
+1. CURRENT STATUS
+
+Project: betterVRAMd Phase: 1 — Core infrastructure Platform: Linux / WSL2
+
+Implemented (not yet tested)
 vramd/core/config.py — Configuration management
-vramd/core/lifecycle.py — LifecycleController
-vramd/core/scheduler.py — InferenceScheduler
-
-Existing infrastructure:
-
+vramd/core/manager.py — Central manager and initial component integration
+vramd/core/budget.py — Resource budget calculator
+vramd/core/lifecycle.py — Initial lifecycle controller
+vramd/core/scheduler.py — Initial inference scheduler
+vramd/models/registry.py — Model registry
+vramd/models/cache.py — RAM cache manager
+Existing infrastructure
 System monitor
 GPU monitor
-Resource budget calculator
-llama.cpp adapter placeholder
-Worker process placeholder
+llama.cpp adapter
+Worker process
 CLI structure
 Application entry point
 
-IMPORTANT: Existing files are not necessarily fully implemented or integrated. No tests have been run on the newly implemented cache, lifecycle or scheduler modules.
+Existing infrastructure still requires implementation review and integration.
 
 2. ARCHITECTURE DECISIONS
-Component ownership
-VRAMdManager owns ModelRegistry.
-VRAMdManager owns RAMCacheManager.
-LifecycleController receives references to both through dependency injection.
-InferenceScheduler manages inference request ordering.
-Worker subsystem executes inference requests.
-Model lifecycle
-
-Registration must never automatically load models.
-
-Application startup must never automatically:
-
-Load GGUF files into RAM.
-Warm model pages.
-Allocate GPU resources.
-
-Model states currently include:
-
-Registered
-Cached
-
-Future inference states and GPU lifecycle states must be handled separately.
-
-Memory management
-Use mmap for model files.
-Avoid unnecessary memory copies.
+VRAMdManager owns ModelRegistry and RAMCacheManager.
+VRAMdManager owns LifecycleController and InferenceScheduler.
+LifecycleController receives registry and cache references through dependency injection.
+Model registration never automatically loads models.
+Application startup never automatically warms model pages.
+No GPU allocation while idle.
+RAM caching uses mmap.
 No mlock by default.
-Page warming must be optional.
-GPU resources must be released after inference.
-Verify actual VRAM reclamation where supported.
+Inference execution belongs to the worker subsystem.
+
+See PROJECT_CONTEXT.txt for complete architecture.
+
 3. NEXT DEVELOPMENT STEPS
 
 Continue implementation without running tests or inference.
 
-Integrate ModelRegistry and RAMCacheManager into VRAMdManager.
-Review and refine LifecycleController.
-Review and refine InferenceScheduler.
 Implement model metadata inspection.
 Implement inference request representation and validation.
-Implement resource-aware loading scheduler.
+Review and refine InferenceScheduler.
+Review and refine LifecycleController.
+Implement resource-aware loading decisions.
 Implement separate worker process.
 Implement llama.cpp backend adapter.
-Implement inference execution and queue integration.
+Integrate inference queue and worker.
 Implement model loading and unloading coordination.
 Complete CLI commands.
 Complete application entry point.
-Add logging and error handling.
+Implement logging and error handling.
 Review integrated architecture.
 Update documentation.
 Conduct controlled final testing.
 4. DEVELOPMENT RULES
 One logical development stage at a time.
-Implement architecture before testing.
+Complete architecture before testing.
 Clearly identify CREATE vs EDIT.
-Always provide complete file paths.
+Always provide exact file paths.
 Provide complete copy-paste-ready files.
 Preserve existing working code.
-Never assume an empty file is implemented.
-Never recreate the existing virtual environment.
+Never assume a placeholder is implemented.
+Never recreate the virtual environment.
 Avoid unnecessary dependencies.
-Do not run inference during implementation.
-Keep memory usage low during development.
+Avoid loading large models during development.
+Keep responses concise.
 5. CURRENT NEXT ACTION
 
-Integrate the following components into VRAMdManager:
+Implement model metadata inspection.
 
-ModelRegistry
-RAMCacheManager
-LifecycleController
-InferenceScheduler
+Expected location: vramd/models/metadata.py
 
-Respect the agreed ownership architecture.
+Requirements:
 
-Do not automatically load or warm models during manager startup.
+Inspect GGUF metadata.
+Extract architecture and model information.
+Extract context length where available.
+Extract tensor and parameter information where available.
+Avoid loading model weights into RAM.
+Avoid GPU allocation.
+Handle malformed or unsupported GGUF files gracefully.
 
 Do not run tests yet.
 
-The immediate goal is to complete the architecture before beginning controlled integration and testing.
+PROJECT: betterVRAMd PHASE: 1 CURRENT MILESTONE: Core infrastructure NEXT MODULE: Model Metadata Inspection
