@@ -23,8 +23,22 @@ class ModelMemoryEstimator:
 
     SAFETY_MARGIN = 1.15
 
-    # Standard llama.cpp transformer block naming convention.
     LAYER_PATTERN = re.compile(r"(?:^|\.)blk\.(\d+)(?:\.|$)")
+
+    @staticmethod
+    def _get_layer_count(metadata: dict) -> int:
+        architecture = metadata.get("architecture")
+
+        if not architecture:
+            return 0
+
+        model_metadata = metadata.get("metadata", {})
+
+        return int(
+            model_metadata.get(
+                f"{architecture}.block_count", 0
+            )
+        )
 
     def estimate(
         self,
@@ -37,22 +51,21 @@ class ModelMemoryEstimator:
 
         tensor_bytes = metadata.get("tensor_bytes")
 
-        if not isinstance(tensor_bytes, (int, float)) or tensor_bytes <= 0:
+        if (
+            not isinstance(tensor_bytes, (int, float))
+            or tensor_bytes <= 0
+        ):
             raise ValueError(
                 "Valid tensor_bytes are required for estimation."
             )
 
-        architecture = metadata.get("architecture")
-        model_metadata = metadata.get("metadata", {})
+        block_count = self._get_layer_count(metadata)
 
-        total_layers = 0
+        if block_count < 0:
+            raise ValueError("Invalid transformer block count.")
 
-        if architecture:
-            total_layers = int(
-                model_metadata.get(
-                    f"{architecture}.block_count", 0
-                )
-            )
+        # llama.cpp counts the output layer in -ngl.
+        total_layers = block_count + 1
 
         if gpu_layers < 0:
             raise ValueError("gpu_layers cannot be negative.")
@@ -60,16 +73,12 @@ class ModelMemoryEstimator:
         if gpu_layers > total_layers:
             raise ValueError(
                 f"Requested {gpu_layers} GPU layers, "
-                f"but model has {total_layers} layers."
+                f"but llama.cpp supports at most {total_layers} "
+                "offload layers for this model."
             )
 
-        if gpu_layers > 0 and total_layers == 0:
-            raise ValueError(
-                "Layer count unavailable; GPU estimation is unsafe."
-            )
-
-        total_tensor_bytes = int(tensor_bytes)
         gpu_bytes = 0
+        total_tensor_bytes = int(tensor_bytes)
 
         if gpu_layers > 0:
             tensors = metadata.get("tensors")
@@ -77,16 +86,11 @@ class ModelMemoryEstimator:
             if not isinstance(tensors, list) or not tensors:
                 raise ValueError(
                     "Full tensor metadata is required for "
-                    "layer-based GPU estimation."
+                    "GPU-layer estimation."
                 )
 
-            first_gpu_layer = total_layers - gpu_layers
-
-            selected_layers = set(
-                range(first_gpu_layer, total_layers)
-            )
-
-            found_layers = set()
+            output_bytes = 0
+            layer_bytes = {}
             inspected_tensor_bytes = 0
 
             for tensor in tensors:
@@ -100,60 +104,91 @@ class ModelMemoryEstimator:
 
                 if size_bytes < 0:
                     raise ValueError(
-                        f"Invalid tensor size for {name}."
+                        f"Invalid tensor size: {name}"
                     )
 
                 inspected_tensor_bytes += size_bytes
 
+                # llama.cpp output-layer tensors.
+                if name.startswith("output."):
+                    output_bytes += size_bytes
+                    continue
+
                 match = self.LAYER_PATTERN.search(name)
 
-                if match is None:
-                    continue
+                if match:
+                    layer_index = int(match.group(1))
 
-                layer_index = int(match.group(1))
+                    if layer_index >= block_count:
+                        raise ValueError(
+                            f"Tensor {name} references an invalid "
+                            "transformer block."
+                        )
 
-                if layer_index >= total_layers:
-                    warnings.append(
-                        f"Tensor {name} references a layer "
-                        "outside the declared architecture."
+                    layer_bytes[layer_index] = (
+                        layer_bytes.get(layer_index, 0)
+                        + size_bytes
                     )
-                    continue
 
-                found_layers.add(layer_index)
-
-                if layer_index in selected_layers:
-                    gpu_bytes += size_bytes
-
-            if inspected_tensor_bytes == 0:
+            if inspected_tensor_bytes <= 0:
                 raise ValueError(
-                    "Tensor metadata contains no measurable bytes."
+                    "No measurable tensor data found."
                 )
 
             if inspected_tensor_bytes != total_tensor_bytes:
                 warnings.append(
-                    "Tensor byte totals differ from the aggregate "
-                    "metadata; using the larger value conservatively."
+                    "Tensor byte total differs from aggregate "
+                    "metadata. Using the inspected tensor total."
                 )
 
-                total_tensor_bytes = max(
-                    total_tensor_bytes,
-                    inspected_tensor_bytes,
-                )
+                total_tensor_bytes = inspected_tensor_bytes
 
-            missing_layers = selected_layers - found_layers
-
-            if missing_layers:
+            if output_bytes <= 0:
                 raise ValueError(
-                    "Unable to account for selected GPU layers: "
-                    f"{sorted(missing_layers)}"
+                    "Output-layer tensors could not be identified. "
+                    "GPU estimation cannot safely proceed."
                 )
+
+            # -ngl 1 includes the output layer.
+            gpu_bytes = output_bytes
+
+            # Additional -ngl values select transformer blocks
+            # starting from the final block.
+            selected_block_count = gpu_layers - 1
+
+            if selected_block_count > 0:
+                first_gpu_block = (
+                    block_count - selected_block_count
+                )
+
+                selected_blocks = range(
+                    first_gpu_block,
+                    block_count,
+                )
+
+                for block_index in selected_blocks:
+                    if block_index not in layer_bytes:
+                        raise ValueError(
+                            f"Missing tensor information for "
+                            f"transformer block {block_index}."
+                        )
+
+                    gpu_bytes += layer_bytes[block_index]
 
             warnings.append(
                 "Non-layer tensors remain assigned to RAM. "
-                "Actual llama.cpp tensor placement may differ."
+                "Actual llama.cpp backend placement may differ."
             )
 
-        ram_bytes = max(0, total_tensor_bytes - gpu_bytes)
+            warnings.append(
+                "Output-layer identification uses GGUF tensor names. "
+                "Architecture-specific tensor placement may differ."
+            )
+
+        ram_bytes = max(
+            0,
+            total_tensor_bytes - gpu_bytes,
+        )
 
         estimated_ram_mb = (
             ram_bytes * self.SAFETY_MARGIN / (1024 ** 2)

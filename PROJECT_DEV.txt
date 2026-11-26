@@ -20,6 +20,7 @@ vramd/models/registry.py — GGUF model registration and discovery.
 vramd/models/cache.py — Read-only mmap model cache.
 vramd/models/metadata.py — Full GGUF metadata and tensor inspection using the installed llama.cpp GGUF Python package.
 vramd/models/estimator.py — Preliminary RAM and VRAM estimation using tensor-level layer accounting.
+vramd/models/selector.py — Automatic GPU-layer selection using resource budgets and memory estimates.
 Existing infrastructure
 vramd/monitor/system.py — System resource monitoring.
 vramd/monitor/gpu.py — GPU monitoring.
@@ -27,6 +28,7 @@ vramd/inference/llama_cpp.py — llama.cpp integration structure.
 vramd/worker/process.py — Worker process structure.
 vramd/cli/commands.py — CLI structure.
 vramd/main.py — Application entry point.
+
 2. ARCHITECTURE DECISIONS
 VRAMdManager owns the main application services.
 LifecycleController receives registry, cache and metadata inspector through dependency injection.
@@ -45,13 +47,12 @@ See PROJECT_CONTEXT.txt for complete architecture decisions.
 3. KNOWN IMPLEMENTATION LIMITATIONS
 LifecycleController requires review.
 InferenceScheduler requires review.
-ModelMemoryEstimator uses preliminary tensor-level GPU-layer estimates.
-Actual llama.cpp tensor placement, including output-layer handling, requires further refinement.
-KV cache and runtime overhead are not yet included in estimates.
-GGUF metadata extraction requires validation against actual model files.
-Manager integration has not been tested.
-Worker and inference integration remain incomplete.
-CLI and application entry point require completion.
+ModelMemoryEstimator uses tensor-level accounting and preliminary llama.cpp -ngl semantics.
+Architecture-specific tensor placement and tied embeddings require further refinement.
+KV cache and runtime overhead are not yet included.
+Automatic GPU-layer selection is implemented but not tested.
+
+
 4. NEXT DEVELOPMENT ROADMAP
 
 Continue implementation without running tests or inference.
@@ -74,6 +75,8 @@ Implement logging and error handling.
 Review integrated architecture.
 Update documentation.
 Conduct controlled final testing.
+
+
 5. TESTING POLICY
 
 Testing is deferred until architecture implementation is complete.
@@ -128,5 +131,13 @@ Never recreate the virtual environment unnecessarily.
 
 PROJECT: betterVRAMd
 PHASE: 1
-CURRENT MILESTONE: Core infrastructure
-NEXT TASK: Automatic GPU-layer selection.
+
+### Immediate next task
+
+Review and refine LifecycleController.
+
+Before proceeding:
+- Verify integration with ModelLayerSelector.
+- Ensure model loading decisions use resource estimates.
+- Preserve lazy loading and mmap behavior.
+- Do not allocate GPU resources during implementation.
