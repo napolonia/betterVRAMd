@@ -1,73 +1,71 @@
 PROJECT_DEV.txt
 betterVRAMd — Development Status
 
-Phase: 1 — Core infrastructure
-Status: Implementation in progress
-Testing: Deferred until architecture implementation is complete
+Phase: 1 — Core infrastructure Status: Implementation in progress Testing: Deferred until architecture implementation is complete
 
 1. IMPLEMENTED MODULES
 
-All statuses below mean code has been written, not that functionality has been verified.
+All statuses indicate implementation only. Functionality has not yet been validated through testing.
 
 Core
 vramd/core/config.py — TOML configuration and environment overrides.
-vramd/core/manager.py — Central manager and initial service integration.
+vramd/core/manager.py — Central manager, resource monitoring, memory estimation and GPU-layer selection integration.
 vramd/core/budget.py — RAM and VRAM resource budget calculation.
-vramd/core/lifecycle.py — Initial model lifecycle controller.
+vramd/core/lifecycle.py — Model lifecycle coordination, metadata inspection, caching and resource-aware configuration selection.
 vramd/core/scheduler.py — Initial inference scheduler.
 Models
 vramd/models/registry.py — GGUF model registration and discovery.
 vramd/models/cache.py — Read-only mmap model cache.
-vramd/models/metadata.py — Full GGUF metadata and tensor inspection using the installed llama.cpp GGUF Python package.
-vramd/models/estimator.py — Preliminary RAM and VRAM estimation using tensor-level layer accounting.
-vramd/models/selector.py — Automatic GPU-layer selection using resource budgets and memory estimates.
-Existing infrastructure
+vramd/models/metadata.py — Full GGUF metadata and tensor inspection.
+vramd/models/estimator.py — Preliminary tensor-level RAM/VRAM estimation, including llama.cpp offload-layer accounting.
+vramd/models/selector.py — Automatic selection of the highest feasible GPU-layer configuration.
+Monitoring and infrastructure
 vramd/monitor/system.py — System resource monitoring.
 vramd/monitor/gpu.py — GPU monitoring.
 vramd/inference/llama_cpp.py — llama.cpp integration structure.
 vramd/worker/process.py — Worker process structure.
 vramd/cli/commands.py — CLI structure.
 vramd/main.py — Application entry point.
-
 2. ARCHITECTURE DECISIONS
 VRAMdManager owns the main application services.
-LifecycleController receives registry, cache and metadata inspector through dependency injection.
+LifecycleController receives dependencies through dependency injection.
 Model registration never automatically loads models.
 Application startup must not warm model pages or allocate GPU resources.
 Model caching uses mmap.
 No memory locking by default.
 GGUF inspection uses the Python tooling from the custom llama.cpp installation, installed in the project virtual environment.
 Full tensor inspection is retained for memory estimation.
+GPU-layer selection uses tensor-level estimates rather than proportional layer counts.
+llama.cpp -ngl accounting distinguishes the output layer from transformer blocks.
+Non-layer tensors are conservatively assigned to RAM.
 Memory estimates are preliminary and must not be treated as guaranteed capacity.
-Resource allocation must account for KV cache and runtime overhead.
-GPU-layer estimation should use tensor-level information rather than simple proportional layer counts.
+KV cache and inference runtime overhead must be included in future estimation improvements.
+Resource monitoring is passive and does not allocate GPU resources.
+Cache warming respects warm_cache_enabled.
 
 See PROJECT_CONTEXT.txt for complete architecture decisions.
 
 3. KNOWN IMPLEMENTATION LIMITATIONS
-LifecycleController requires review.
-InferenceScheduler requires review.
-ModelMemoryEstimator uses tensor-level accounting and preliminary llama.cpp -ngl semantics.
-Architecture-specific tensor placement and tied embeddings require further refinement.
-KV cache and runtime overhead are not yet included.
-Automatic GPU-layer selection is implemented but not tested.
-
-
+Estimator output-layer identification requires validation against actual GGUF architectures.
+Tied embeddings and architecture-specific tensor placement require further refinement.
+KV cache and inference runtime overhead are not yet included.
+GPU-layer selection has not been validated against actual llama.cpp loading behavior.
+Metadata extraction requires validation against representative GGUF models.
+Lifecycle and manager integration have not been tested.
+Inference and worker integration remain incomplete.
+CLI and application entry point require completion.
+Scheduler behavior requires review.
 4. NEXT DEVELOPMENT ROADMAP
 
 Continue implementation without running tests or inference.
 
-Finalize and synchronize ModelMetadataInspector changes.
-Finalize and synchronize ModelMemoryEstimator changes.
-Reconcile tensor accounting with llama.cpp GPU-layer semantics.
-Implement automatic GPU-layer selection based on available RAM/VRAM budgets.
-Review and refine LifecycleController.
-Review and refine InferenceScheduler.
-Implement inference request representation and validation.
-Implement resource-aware loading decisions.
-Implement separate worker process.
+Review and refine vramd/inference/llama_cpp.py.
+Review and refine vramd/worker/process.py.
+Review inference request representation and validation.
+Refine InferenceScheduler integration.
+Implement resource-aware model loading decisions.
+Integrate worker process with lifecycle and scheduler.
 Complete llama.cpp backend integration.
-Integrate inference queue and worker.
 Implement model loading and unloading coordination.
 Complete CLI commands.
 Complete application entry point.
@@ -75,11 +73,9 @@ Implement logging and error handling.
 Review integrated architecture.
 Update documentation.
 Conduct controlled final testing.
-
-
 5. TESTING POLICY
 
-Testing is deferred until architecture implementation is complete.
+Testing remains deferred until architecture implementation is complete.
 
 Final testing must be divided into:
 
@@ -100,44 +96,29 @@ Before continuing:
 Read PROJECT_CONTEXT.txt.
 Read PROJECT_WORKFLOW.txt.
 Read this file.
-Check the actual repository structure.
-Verify the current contents of files before editing.
+Inspect the actual repository structure.
+Verify current file contents before editing.
 Do not assume previous implementation instructions were successfully applied without checking.
+Preserve existing architecture and working code.
 Immediate next task
 
-Implement automatic GPU-layer selection based on available resource budgets.
+Review vramd/inference/llama_cpp.py.
 
-Before implementation:
+Focus on:
 
-Verify the revised metadata and estimator files.
-Account for llama.cpp GPU-layer semantics.
-Account for RAM and VRAM safety limits.
-Preserve existing project architecture.
+Backend configuration.
+Subprocess management.
+llama.cpp executable discovery.
+GPU-layer argument handling.
+Resource-safe execution.
+Separation between backend execution and lifecycle management.
 
-Do not run tests, load models or execute inference yet.
+Do not execute inference or load models.
 
 7. PROJECT ENVIRONMENT
 
-Platform: Linux / WSL2.
-GPU: NVIDIA GTX 1050, 4 GB VRAM.
-CUDA architecture: sm_61.
-Backend: Custom llama.cpp build.
-llama.cpp build directory: ~/llama.cpp/build-cuda/.
-GGUF Python tooling: ~/llama.cpp/gguf-py/.
-GGUF package: Installed in project virtual environment.
-Development environment: Existing Python virtual environment.
+Platform: Linux / WSL2. GPU: NVIDIA GTX 1050, 4 GB VRAM. CUDA architecture: sm_61. Backend: Custom llama.cpp build. llama.cpp build directory: ~/llama.cpp/build-cuda/. GGUF Python tooling: ~/llama.cpp/gguf-py/. GGUF package: Installed in project virtual environment. Development environment: Existing Python virtual environment.
 
 Never recreate the virtual environment unnecessarily.
 
-PROJECT: betterVRAMd
-PHASE: 1
-
-### Immediate next task
-
-Review and refine LifecycleController.
-
-Before proceeding:
-- Verify integration with ModelLayerSelector.
-- Ensure model loading decisions use resource estimates.
-- Preserve lazy loading and mmap behavior.
-- Do not allocate GPU resources during implementation.
+PROJECT: betterVRAMd PHASE: 1 CURRENT MILESTONE: Core infrastructure NEXT TASK: llama.cpp backend review.

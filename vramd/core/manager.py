@@ -10,6 +10,7 @@ from vramd.models.cache import RAMCacheManager
 from vramd.models.estimator import ModelMemoryEstimator
 from vramd.models.metadata import ModelMetadataInspector
 from vramd.models.registry import ModelRegistry
+from vramd.models.selector import ModelLayerSelector
 from vramd.monitor.gpu import GPUMonitor
 from vramd.monitor.system import SystemMonitor
 
@@ -44,7 +45,7 @@ class VRAMdManager:
 
         self.last_error: str | None = None
 
-        # Model management: owned by VRAMdManager.
+        # Model management.
         self.model_registry = ModelRegistry(
             self.config.model_directory
         )
@@ -55,10 +56,20 @@ class VRAMdManager:
             self.config
         )
 
+        # Memory estimation and GPU-layer selection.
+        self.memory_estimator = ModelMemoryEstimator()
+
+        self.layer_selector = ModelLayerSelector(
+            estimator=self.memory_estimator
+        )
+
+        # Lifecycle coordination.
         self.lifecycle = LifecycleController(
             registry=self.model_registry,
             cache=self.ram_cache,
             metadata_inspector=self.metadata_inspector,
+            layer_selector=self.layer_selector,
+            config=self.config,
         )
 
         # Inference scheduling.
@@ -88,8 +99,6 @@ class VRAMdManager:
             self.config
         )
 
-        self.memory_estimator = ModelMemoryEstimator()
-
     def register_component(
         self,
         name: str,
@@ -103,7 +112,9 @@ class VRAMdManager:
             )
 
         if name in self.components:
-            raise ValueError(f"Component already registered: {name}")
+            raise ValueError(
+                f"Component already registered: {name}"
+            )
 
         self.components[name] = component
 
@@ -187,6 +198,7 @@ class VRAMdManager:
                 errors.append(f"{name}: {error}")
 
         self._started_components.clear()
+
         return errors
 
     def get_status(self) -> dict[str, Any]:
@@ -206,7 +218,11 @@ class VRAMdManager:
 
     def get_resource_status(self) -> dict:
         """Collect passive system and GPU measurements."""
-
+        if self.state != ManagerState.RUNNING:
+            raise RuntimeError(
+                "Resource monitoring requires a running manager."
+            )
+        
         status = {
             "system": self.system_monitor.get_status(),
             "gpu": None,
@@ -226,6 +242,7 @@ class VRAMdManager:
             system=status["system"],
             gpu=status["gpu"],
         )
+
     def estimate_model_memory(
         self,
         name: str,
@@ -240,6 +257,26 @@ class VRAMdManager:
             metadata=metadata,
             budget=budget,
             gpu_layers=gpu_layers,
+        )
+
+        return self.memory_estimator.to_dict(estimate)
+
+    def select_model_configuration(
+        self,
+        name: str,
+        max_gpu_layers: int | None = None,
+    ) -> dict:
+        """Select the highest feasible GPU-layer configuration."""
+
+        budget = self.get_resource_budget()
+
+        if max_gpu_layers is None:
+            max_gpu_layers = self.config.default_gpu_layers
+
+        estimate = self.lifecycle.select_model_configuration(
+            name=name,
+            budget=budget,
+            max_gpu_layers=max_gpu_layers,
         )
 
         return self.memory_estimator.to_dict(estimate)
