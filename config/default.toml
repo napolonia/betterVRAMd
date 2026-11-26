@@ -1,0 +1,119 @@
+
+# ============================================================
+# VRAMd - Main Configuration
+# ============================================================
+
+[application]
+name = "betterVRAMd"
+version = "0.1.0"
+log_level = "INFO"
+debug = false
+
+# ============================================================
+# PATHS
+# ============================================================
+
+[paths]
+project_root = "~/projects/betterVRAMd"
+model_directory = "~/models-tmp"
+cache_directory = "~/.cache/vramd"
+log_directory = "~/.local/share/vramd/logs"
+runtime_directory = "/tmp/vramd"
+config_directory = "~/projects/betterVRAMd/config"
+
+# Inference backend
+llama_cpp_directory = "~/llama.cpp"
+llama_cli = "~/llama.cpp/build-cuda/bin/llama-cli"
+llama_server = "~/llama.cpp/build-cuda/bin/llama-server"
+
+# ============================================================
+# GPU
+# ============================================================
+
+[gpu]
+enabled = true
+device_index = 0
+
+# Conservative initial budget for GTX 1050 (4 GB)
+max_vram_mb = 1800
+
+monitor_interval_seconds = 1
+verify_memory_release = true
+
+# Future automatic budgeting
+automatic_budget = true
+minimum_free_vram_mb = 512
+
+# ============================================================
+# SYSTEM MEMORY
+# ============================================================
+
+[memory]
+max_ram_mb = 4096
+reserve_mb = 2048
+warm_cache_enabled = true
+allow_memory_locking = false
+cache_strategy = "mmap"
+
+# ============================================================
+# INFERENCE
+# ============================================================
+
+[inference]
+default_backend = "llama.cpp"
+default_mode = "hybrid"
+max_workers = 1
+worker_timeout_seconds = 300
+context_size = 2048
+default_gpu_layers = 10
+threads = 4
+
+# ============================================================
+# WORKER PROCESS
+# ============================================================
+
+[worker]
+use_separate_process = true
+shutdown_timeout_seconds = 10
+force_termination = true
+restart_on_crash = false
+
+# ============================================================
+# SCHEDULER
+# ============================================================
+
+[scheduler]
+enabled = true
+queue_enabled = true
+max_queue_size = 10
+priority_enabled = false
+
+# ============================================================
+# MODEL REGISTRY
+# ============================================================
+
+[registry]
+enabled = true
+auto_discover = false
+supported_formats = ["gguf"]
+
+# ============================================================
+# API (FUTURE)
+# ============================================================
+
+[api]
+enabled = false
+host = "127.0.0.1"
+port = 8765
+authentication = false
+
+# ============================================================
+# LOGGING
+# ============================================================
+
+[logging]
+enabled = true
+file_logging = true
+console_logging = true
+max_file_size_mb = 10
+backup_count = 3

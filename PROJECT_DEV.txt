@@ -1,0 +1,72 @@
+Last updated: 2026-11-26 14:36:28 WET
+
+
+1. NEXT DEVELOPMENT STEPS
+
+Continue implementation without running inference.
+
+Next immediate task:
+
+RAM CACHE MANAGER
+
+File: vramd/models/cache.py
+
+Responsibilities:
+
+Open model files using mmap.
+Track mapped models.
+Optional page warming.
+Track cached model state.
+Release mappings when requested.
+Avoid mlock by default.
+Never allocate GPU resources.
+
+After that:
+
+Connect ModelRegistry and ModelCache to manager.
+Implement model metadata inspection.
+Implement inference request representation.
+Implement loading scheduler.
+Implement lifecycle controller.
+Implement separate worker process.
+Implement llama.cpp backend adapter.
+Implement inference queue.
+Implement CLI.
+Implement application entry point.
+Add logging and error handling.
+Review integrated architecture.
+Conduct controlled end-to-end tests.
+
+
+2. DEVELOPMENT RULES
+
+IMPORTANT FOR FUTURE CHAT:
+
+One logical development stage at a time.
+Prefer implementing complete modules rather than isolated experiments.
+Avoid unnecessary inference tests during implementation.
+Clearly identify every file operation as CREATE or EDIT.
+Give exact file paths.
+Provide complete code blocks where practical.
+Keep code blocks self-contained to avoid indentation/copy-paste errors.
+Never assume a placeholder file is implemented.
+Never recreate the existing virtual environment.
+Preserve working code.
+Explain architectural changes briefly.
+Maintain this project summary when significant changes occur.
+Keep responses concise.
+Do not overwhelm the user with excessive explanations.
+
+3. IMMEDIATE NEXT ACTION
+
+Implement:
+
+vramd/models/cache.py
+
+Build a safe RAM cache manager based on mmap, with optional page warming and explicit cache lifecycle management.
+
+Do not run inference.
+
+The immediate goal is to finish the architecture and implementation before integrated testing.
+
+PROJECT: betterVRAMd PHASE: 1 PLATFORM: Linux / WSL2 CURRENT MILESTONE: Core infrastructure and model management NEXT MODULE: RAM Cache Manager

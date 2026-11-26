@@ -1,0 +1,333 @@
+betterVRAMd — PROJECT CONTEXT / HANDOVER
+
+Last updated: 2026-11-26
+
+1. PROJECT OBJECTIVE
+
+Build betterVRAMd, a self-contained Linux/WSL2 VRAM manager that manages its own inference workloads.
+
+Core objective:
+
+Keep model files/pages available in system RAM when practical.
+Keep model-owned VRAM allocations at zero while idle.
+Allocate GPU resources only when inference is requested.
+Release GPU resources immediately after inference.
+Verify actual GPU memory reclamation.
+Support CPU-only, hybrid CPU/GPU and full GPU inference.
+Support multiple registered GGUF models.
+Use separate inference worker processes.
+Prioritize reliability and resource safety over inference speed.
+
+Phase 1 is Linux/WSL2 only.
+
+Out of scope for Phase 1:
+
+Windows companion service.
+ComfyUI integration.
+GUI.
+Windows integration.
+2. ENVIRONMENT
+
+Host:
+
+Windows 10
+ASUS GL553VD
+NVIDIA GeForce GTX 1050
+4 GB dedicated VRAM
+16 GB physical system RAM
+
+WSL2:
+
+Distribution reported as Linux 56.04
+WSL version 2
+Approximately 9.7 GiB available to Linux
+8 GB swap
+
+CUDA:
+
+NVIDIA driver: 565.90
+NVIDIA-SMI: 565.51.01
+Reported CUDA version: 12.7
+CUDA build targeting sm_61
+User refers to CUDA toolkit as cu126
+
+Python:
+
+Python 3.14.4
+Virtual environment: ~/projects/betterVRAMd/.venv
+Environment is already created and working.
+NEVER recreate the virtual environment unnecessarily.
+Accidental duplicate .venv-1 was identified and should be removed.
+
+Project directory:
+
+~/projects/betterVRAMd
+
+Activation:
+
+cd ~/projects/betterVRAMd source .venv/bin/activate
+
+3. LLAMA.CPP
+
+Custom CUDA build is working.
+
+Build:
+
+Commit/build identifier: b1-41c7a1b
+Executable: ~/llama.cpp/build-cuda/bin/llama-cli
+
+Model previously tested:
+
+~/models-tmp/Qwen3.5-4B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf
+
+Successful inference command:
+
+~/llama.cpp/build-cuda/bin/llama-cli
+-m ~/models-tmp/Qwen3.5-4B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf
+-ngl 10
+-c 2048
+-n 512
+-p "Say hello in one sentence."
+
+llama.cpp CUDA inference works, but additional inference testing has caused Windows freezes.
+
+IMPORTANT: Do not run inference tests during current development. Build the application first, then conduct integrated tests carefully.
+
+4. RESOURCE SAFETY
+
+The machine freezes when inference runs alongside Chrome, VS Code and WSL2.
+
+Chrome must remain available because it is being used to communicate with ChatGPT.
+
+Development strategy:
+
+Build the complete Phase 1 system before integrated inference testing.
+Avoid unnecessary GPU workloads.
+Do not indiscriminately pin model pages using mlock.
+Do not introduce concurrent inference workers.
+Keep resource limits configurable.
+Prioritize CPU and RAM safety as well as VRAM safety.
+
+Initial GPU configuration:
+
+Total VRAM: 4096 MiB
+Initial VRAMd budget: 1800 MiB
+Minimum desired free VRAM: 512 MiB
+Automatic budgeting enabled
+Maximum inference workers: 1
+
+These are conservative initial limits, not guaranteed allocation amounts.
+
+RAM:
+
+Maximum configured application budget: 4096 MiB
+System reserve: 2048 MiB
+Memory locking disabled
+Default cache strategy: mmap
+
+Important distinction:
+
+Filesystem page cache
+Explicitly pinned RAM
+Memory-mapped model files
+VRAM allocations
+
+These are separate concepts and must remain separate in the architecture.
+
+5. ARCHITECTURE
+
+Client:
+
+CLI
+Future API
+Future prompt interface
+
+Core:
+
+Central manager
+Configuration
+Passive monitoring
+Resource budget calculator
+Model registry
+RAM cache manager
+Loading scheduler
+Lifecycle controller
+Inference queue
+
+Worker:
+
+Separate inference process
+llama.cpp integration
+CUDA execution
+
+GPU:
+
+NVML
+CUDA
+NVIDIA driver interface
+
+Architectural rule:
+
+OBSERVE → DECIDE → EXECUTE
+
+Responsibilities:
+
+MONITORS:
+
+Read-only system and GPU measurements.
+Never allocate memory.
+Never load models.
+Never make resource-management decisions.
+
+CORE:
+
+Resource budgeting.
+Scheduling.
+Allocation decisions.
+Lifecycle coordination.
+
+MODEL CACHE:
+
+Memory mapping.
+Optional page warming.
+Cache tracking.
+No indiscriminate memory locking.
+
+WORKER:
+
+Execute inference.
+Own backend resources.
+Terminate after inference to reclaim GPU allocations.
+
+REGISTRY:
+
+Track model identity, location and metadata.
+Never load model weights.
+
+MANAGER:
+
+Coordinate component startup and shutdown.
+Own component lifecycle.
+Expose application status.
+6. EXISTING PROJECT STRUCTURE
+
+betterVRAMd/ ├── config/ │ └── default.toml ├── tests/ │ └── init.py ├── gpu_probe.py ├── vramd/ │ ├── init.py │ ├── main.py │ ├── core/ │ │ ├── init.py │ │ ├── config.py │ │ ├── manager.py │ │ ├── scheduler.py │ │ ├── lifecycle.py │ │ └── budget.py │ ├── monitor/ │ │ ├── init.py │ │ ├── gpu.py │ │ └── system.py │ ├── models/ │ │ ├── init.py │ │ ├── registry.py │ │ └── cache.py │ ├── worker/ │ │ ├── init.py │ │ └── process.py │ ├── inference/ │ │ ├── init.py │ │ └── llama_cpp.py │ └── cli/ │ ├── init.py │ └── commands.py └── .venv/
+
+Note: Some files were created as empty placeholders. Do not assume they are implemented.
+
+7. IMPLEMENTATION STATUS
+
+COMPLETED / WRITTEN:
+
+Python environment.
+Dependencies installed:
+pydantic
+pydantic-settings
+psutil
+pynvml
+tomli-w
+Project structure.
+config/default.toml.
+vramd/core/config.py.
+TOML loader.
+Pydantic validation.
+Path expansion.
+VRAMD_* environment overrides.
+vramd/core/manager.py.
+Manager states.
+Component registration.
+Startup and shutdown.
+Error handling.
+Resource status collection.
+System and GPU monitor integration.
+Budget calculator integration.
+vramd/monitor/system.py.
+Passive RAM and swap monitoring.
+Process RSS monitoring.
+vramd/monitor/gpu.py.
+Passive NVML monitoring.
+VRAM usage.
+GPU utilization.
+Temperature.
+Power state.
+vramd/core/budget.py.
+ResourceBudget dataclass.
+ResourceBudgetCalculator.
+vramd/models/registry.py.
+GGUF registration.
+Model metadata.
+Model discovery.
+
+VALIDATED:
+
+Configuration successfully loaded.
+Manager imports successfully.
+Manager status reports stopped correctly.
+Manager Python syntax compiled.
+System monitor Python syntax compiled.
+
+NOT YET INTEGRATION-TESTED:
+
+GPU monitor.
+Combined monitoring.
+Budget calculator.
+Registry.
+Worker lifecycle.
+8. CONFIGURATION
+
+Main file:
+
+config/default.toml
+
+Sections:
+
+application
+paths
+gpu
+memory
+inference
+worker
+scheduler
+registry
+api
+logging
+
+Important current values:
+
+app_name = "betterVRAMd"
+max_vram_mb = 1800
+minimum_free_vram_mb = 512
+max_ram_mb = 4096
+reserve_mb = 2048
+warm_cache_enabled = true
+allow_memory_locking = false
+cache_strategy = "mmap"
+max_workers = 1
+default_mode = "hybrid"
+default_gpu_layers = 10
+context_size = 2048
+
+Keep the project name as betterVRAMd. Python package remains vramd.
+
+We'll maintain two separate files:
+
+- `PROJECT_CONTEXT.txt` — Stable project identity, environment, architecture, design principles and overall objectives.
+- `PROJECT_DEV.txt` — Live development log: implementation status, completed modules, changes, decisions, errors and next actions.
+
+This avoids rewriting the entire project context every time we make progress.
+
+### Agreed workflow
+
+1. Implement a module.
+2. Confirm its implementation status.
+3. Update `PROJECT_DEV.txt`.
+4. Keep `PROJECT_CONTEXT.txt` mostly unchanged unless architecture or environment changes.
+
+Current development position:
+
+- Configuration: implemented.
+- Manager: implemented.
+- System/GPU monitors: implemented.
+- Resource budgeting: implemented.
+- Model registry: implemented.
+- Next: RAM cache manager (`vramd/models/cache.py`).
