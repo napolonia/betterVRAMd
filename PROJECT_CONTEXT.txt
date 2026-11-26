@@ -331,3 +331,33 @@ Current development position:
 - Resource budgeting: implemented.
 - Model registry: implemented.
 - Next: RAM cache manager (`vramd/models/cache.py`).
+
+Component Ownership and Integration
+VRAMdManager
+
+VRAMdManager is the central owner and coordinator of:
+
+ModelRegistry
+RAMCacheManager
+LifecycleController
+InferenceScheduler
+SystemMonitor
+GPUMonitor (when GPU monitoring is enabled)
+ResourceBudgetCalculator
+Dependency injection
+VRAMdManager creates and owns ModelRegistry and RAMCacheManager.
+VRAMdManager passes references to both into LifecycleController.
+InferenceScheduler is owned directly by VRAMdManager.
+LifecycleController does not own or recreate its dependencies.
+Startup and shutdown
+Application startup must not automatically load models.
+Application startup must not warm model pages.
+Application startup must not allocate GPU resources.
+Shutdown must release all active RAM cache mappings.
+Model registration only records metadata.
+Current implementation status
+ModelRegistry: implemented, not yet integration-tested.
+RAMCacheManager: implemented, not yet integration-tested.
+LifecycleController: initial implementation, not yet reviewed or tested.
+InferenceScheduler: initial implementation, not yet reviewed or tested.
+VRAMdManager integration: initial implementation, not yet tested.
