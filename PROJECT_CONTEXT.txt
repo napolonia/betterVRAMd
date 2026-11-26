@@ -248,62 +248,8 @@ Note: Some files were created as empty placeholders. Do not assume they are impl
 
 7. IMPLEMENTATION STATUS
 
-COMPLETED / WRITTEN:
+see PROJECT_DEV.txt
 
-Python environment.
-Dependencies installed:
-pydantic
-pydantic-settings
-psutil
-pynvml
-tomli-w
-Project structure.
-config/default.toml.
-vramd/core/config.py.
-TOML loader.
-Pydantic validation.
-Path expansion.
-VRAMD_* environment overrides.
-vramd/core/manager.py.
-Manager states.
-Component registration.
-Startup and shutdown.
-Error handling.
-Resource status collection.
-System and GPU monitor integration.
-Budget calculator integration.
-vramd/monitor/system.py.
-Passive RAM and swap monitoring.
-Process RSS monitoring.
-vramd/monitor/gpu.py.
-Passive NVML monitoring.
-VRAM usage.
-GPU utilization.
-Temperature.
-Power state.
-vramd/core/budget.py.
-ResourceBudget dataclass.
-ResourceBudgetCalculator.
-vramd/models/registry.py.
-GGUF registration.
-Model metadata.
-Model discovery.
-
-VALIDATED:
-
-Configuration successfully loaded.
-Manager imports successfully.
-Manager status reports stopped correctly.
-Manager Python syntax compiled.
-System monitor Python syntax compiled.
-
-NOT YET INTEGRATION-TESTED:
-
-GPU monitor.
-Combined monitoring.
-Budget calculator.
-Registry.
-Worker lifecycle.
 8. CONFIGURATION
 
 Main file:
@@ -355,7 +301,7 @@ This avoids rewriting the entire project context every time we make progress.
 4. Keep `PROJECT_CONTEXT.txt` mostly unchanged unless architecture or environment changes.
 
 
-Component Ownership and Integration
+9. Component Ownership and Integration
 VRAMdManager
 
 VRAMdManager is the central owner and coordinator of:

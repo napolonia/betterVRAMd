@@ -1,6 +1,7 @@
 
 from pathlib import Path
-import sys
+
+from gguf import GGUFReader
 
 from vramd.core.config import VRAMdConfig
 
@@ -10,39 +11,10 @@ class ModelMetadataError(Exception):
 
 
 class ModelMetadataInspector:
-    """Inspect GGUF metadata using the configured llama.cpp tooling."""
+    """Inspect GGUF metadata using llama.cpp's GGUF reader."""
 
     def __init__(self, config: VRAMdConfig):
         self.config = config
-        self._reader_class = None
-
-    def _load_reader(self):
-        if self._reader_class is not None:
-            return self._reader_class
-
-        gguf_path = (
-            self.config.llama_cpp_directory / "gguf-py"
-        ).expanduser().resolve()
-
-        if not (gguf_path / "gguf" / "gguf_reader.py").is_file():
-            raise ModelMetadataError(
-                f"GGUF Python package not found: {gguf_path}"
-            )
-
-        path_string = str(gguf_path)
-
-        if path_string not in sys.path:
-            sys.path.insert(0, path_string)
-
-        try:
-            from gguf import GGUFReader
-        except ImportError as error:
-            raise ModelMetadataError(
-                f"Unable to import llama.cpp GGUF reader: {error}"
-            ) from error
-
-        self._reader_class = GGUFReader
-        return self._reader_class
 
     @staticmethod
     def _decode_value(field):
@@ -50,15 +22,11 @@ class ModelMetadataInspector:
 
         if hasattr(value, "tolist"):
             value = value.tolist()
+        elif hasattr(value, "item"):
+            value = value.item()
 
         if isinstance(value, bytes):
             return value.decode("utf-8", errors="replace")
-
-        if isinstance(value, list):
-            if len(value) == 1:
-                return value[0]
-
-            return value
 
         return value
 
@@ -69,11 +37,12 @@ class ModelMetadataInspector:
             raise FileNotFoundError(model_path)
 
         if model_path.suffix.lower() != ".gguf":
-            raise ModelMetadataError("Only GGUF files are supported.")
+            raise ModelMetadataError(
+                "Only GGUF files are supported."
+            )
 
         try:
-            reader_class = self._load_reader()
-            reader = reader_class(str(model_path))
+            reader = GGUFReader(str(model_path))
 
             metadata = {}
 
@@ -83,23 +52,33 @@ class ModelMetadataInspector:
                 except (ValueError, IndexError, TypeError):
                     continue
 
-            tensors = []
+            architecture = metadata.get("general.architecture")
 
+            context_length = None
+
+            if architecture:
+                context_length = metadata.get(
+                    f"{architecture}.context_length"
+                )
+
+            tensors = []
             total_parameters = 0
             quantization_types = {}
             total_tensor_bytes = 0
 
             for tensor in reader.tensors:
-                shape = tensor.shape.tolist()
-                tensor_type = str(tensor.tensor_type)
-                tensor_bytes = int(tensor.n_bytes)
-                total_tensor_bytes += tensor_bytes
+                shape = [
+                    int(dimension)
+                    for dimension in tensor.shape
+                ]
 
-                parameters = 1
-                for dimension in shape:
-                    parameters *= int(dimension)
+                tensor_type = tensor.tensor_type.name
+                tensor_bytes = int(tensor.n_bytes)
+                parameters = int(tensor.n_elements)
 
                 total_parameters += parameters
+                total_tensor_bytes += tensor_bytes
+
                 quantization_types[tensor_type] = (
                     quantization_types.get(tensor_type, 0) + 1
                 )
@@ -112,17 +91,6 @@ class ModelMetadataInspector:
                     "size_bytes": tensor_bytes,
                 })
 
-            architecture = metadata.get(
-                "general.architecture"
-            )
-
-            context_length = None
-
-            if architecture:
-                context_length = metadata.get(
-                    f"{architecture}.context_length"
-                )
-
             return {
                 "name": model_path.stem,
                 "path": str(model_path),
@@ -134,12 +102,14 @@ class ModelMetadataInspector:
                 "tensors": tensors,
                 "parameter_count": total_parameters,
                 "parameter_count_billions": round(
-                    total_parameters / 1_000_000_000, 3
+                    total_parameters / 1_000_000_000,
+                    3,
                 ),
                 "quantization_types": quantization_types,
                 "tensor_bytes": total_tensor_bytes,
                 "tensor_size_mb": round(
-                    total_tensor_bytes / (1024 ** 2), 2
+                    total_tensor_bytes / (1024 ** 2),
+                    2,
                 ),
             }
 
@@ -147,5 +117,6 @@ class ModelMetadataInspector:
             raise
         except Exception as error:
             raise ModelMetadataError(
-                f"Failed to inspect GGUF model {model_path}: {error}"
+                f"Failed to inspect GGUF model "
+                f"{model_path}: {error}"
             ) from error

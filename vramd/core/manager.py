@@ -2,19 +2,17 @@
 from enum import Enum
 from typing import Any, Protocol
 
-from vramd.core.config import VRAMdConfig, load_config
 from vramd.core.budget import ResourceBudgetCalculator
+from vramd.core.config import VRAMdConfig, load_config
 from vramd.core.lifecycle import LifecycleController
 from vramd.core.scheduler import InferenceScheduler
-
-from vramd.models.registry import ModelRegistry
 from vramd.models.cache import RAMCacheManager
-
-from vramd.monitor.system import SystemMonitor
-from vramd.monitor.gpu import GPUMonitor
-
-from vramd.models.metadata import ModelMetadataInspector
 from vramd.models.estimator import ModelMemoryEstimator
+from vramd.models.metadata import ModelMetadataInspector
+from vramd.models.registry import ModelRegistry
+from vramd.monitor.gpu import GPUMonitor
+from vramd.monitor.system import SystemMonitor
+
 
 class ManagerState(str, Enum):
     STOPPED = "stopped"

@@ -1,8 +1,8 @@
 
-from dataclasses import dataclass
-from pathlib import Path
 import mmap
 import os
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 
@@ -35,7 +35,7 @@ class RAMCacheManager:
         if size == 0:
             raise ValueError(f"Empty model file: {path}")
 
-        file_handle = open(path, "rb")
+        file_handle = os.open(path, "rb")
 
         try:
             mapping = mmap.mmap(

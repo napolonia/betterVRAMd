@@ -1,10 +1,9 @@
 
-from pathlib import Path
 import os
 import tomllib
+from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG = PROJECT_ROOT / "config" / "default.toml"

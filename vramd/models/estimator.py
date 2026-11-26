@@ -1,5 +1,6 @@
 
-from dataclasses import dataclass, asdict
+import re
+from dataclasses import asdict, dataclass
 
 from vramd.core.budget import ResourceBudget
 
@@ -22,6 +23,9 @@ class ModelMemoryEstimator:
 
     SAFETY_MARGIN = 1.15
 
+    # Standard llama.cpp transformer block naming convention.
+    LAYER_PATTERN = re.compile(r"(?:^|\.)blk\.(\d+)(?:\.|$)")
+
     def estimate(
         self,
         metadata: dict,
@@ -33,17 +37,19 @@ class ModelMemoryEstimator:
 
         tensor_bytes = metadata.get("tensor_bytes")
 
-        if tensor_bytes is None or tensor_bytes <= 0:
+        if not isinstance(tensor_bytes, (int, float)) or tensor_bytes <= 0:
             raise ValueError(
                 "Valid tensor_bytes are required for estimation."
             )
 
         architecture = metadata.get("architecture")
+        model_metadata = metadata.get("metadata", {})
+
         total_layers = 0
 
         if architecture:
             total_layers = int(
-                metadata["metadata"].get(
+                model_metadata.get(
                     f"{architecture}.block_count", 0
                 )
             )
@@ -62,26 +68,92 @@ class ModelMemoryEstimator:
                 "Layer count unavailable; GPU estimation is unsafe."
             )
 
-        if gpu_layers == 0:
-            gpu_bytes = 0
-            mode = "cpu"
+        total_tensor_bytes = int(tensor_bytes)
+        gpu_bytes = 0
 
-        else:
-            # Estimate the offloaded portion proportionally.
-            gpu_bytes = tensor_bytes * (
-                gpu_layers / total_layers
+        if gpu_layers > 0:
+            tensors = metadata.get("tensors")
+
+            if not isinstance(tensors, list) or not tensors:
+                raise ValueError(
+                    "Full tensor metadata is required for "
+                    "layer-based GPU estimation."
+                )
+
+            first_gpu_layer = total_layers - gpu_layers
+
+            selected_layers = set(
+                range(first_gpu_layer, total_layers)
             )
-            mode = (
-                "gpu" if gpu_layers == total_layers
-                else "hybrid"
-            )
+
+            found_layers = set()
+            inspected_tensor_bytes = 0
+
+            for tensor in tensors:
+                try:
+                    name = str(tensor["name"])
+                    size_bytes = int(tensor["size_bytes"])
+                except (KeyError, TypeError, ValueError):
+                    raise ValueError(
+                        "Invalid tensor metadata encountered."
+                    )
+
+                if size_bytes < 0:
+                    raise ValueError(
+                        f"Invalid tensor size for {name}."
+                    )
+
+                inspected_tensor_bytes += size_bytes
+
+                match = self.LAYER_PATTERN.search(name)
+
+                if match is None:
+                    continue
+
+                layer_index = int(match.group(1))
+
+                if layer_index >= total_layers:
+                    warnings.append(
+                        f"Tensor {name} references a layer "
+                        "outside the declared architecture."
+                    )
+                    continue
+
+                found_layers.add(layer_index)
+
+                if layer_index in selected_layers:
+                    gpu_bytes += size_bytes
+
+            if inspected_tensor_bytes == 0:
+                raise ValueError(
+                    "Tensor metadata contains no measurable bytes."
+                )
+
+            if inspected_tensor_bytes != total_tensor_bytes:
+                warnings.append(
+                    "Tensor byte totals differ from the aggregate "
+                    "metadata; using the larger value conservatively."
+                )
+
+                total_tensor_bytes = max(
+                    total_tensor_bytes,
+                    inspected_tensor_bytes,
+                )
+
+            missing_layers = selected_layers - found_layers
+
+            if missing_layers:
+                raise ValueError(
+                    "Unable to account for selected GPU layers: "
+                    f"{sorted(missing_layers)}"
+                )
 
             warnings.append(
-                "GPU memory is estimated proportionally by layer "
-                "count; actual tensor placement may differ."
+                "Non-layer tensors remain assigned to RAM. "
+                "Actual llama.cpp tensor placement may differ."
             )
 
-        ram_bytes = tensor_bytes - gpu_bytes
+        ram_bytes = max(0, total_tensor_bytes - gpu_bytes)
 
         estimated_ram_mb = (
             ram_bytes * self.SAFETY_MARGIN / (1024 ** 2)
@@ -91,10 +163,16 @@ class ModelMemoryEstimator:
             gpu_bytes * self.SAFETY_MARGIN / (1024 ** 2)
         )
 
-        # KV cache, context buffers and backend overhead are not
-        # included in the tensor storage estimate.
+        if gpu_layers == 0:
+            mode = "cpu"
+        elif gpu_layers == total_layers:
+            mode = "gpu"
+        else:
+            mode = "hybrid"
+
         warnings.append(
-            "KV cache and inference runtime overhead are not included."
+            "KV cache, computation buffers and inference runtime "
+            "overhead are not included."
         )
 
         feasible = (

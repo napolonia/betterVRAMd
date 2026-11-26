@@ -1,7 +1,9 @@
 PROJECT_DEV.txt
 betterVRAMd — Development Status
 
-Phase: 1 — Core infrastructure Status: Implementation in progress Testing: Deferred until architecture implementation is complete
+Phase: 1 — Core infrastructure
+Status: Implementation in progress
+Testing: Deferred until architecture implementation is complete
 
 1. IMPLEMENTED MODULES
 
@@ -16,8 +18,8 @@ vramd/core/scheduler.py — Initial inference scheduler.
 Models
 vramd/models/registry.py — GGUF model registration and discovery.
 vramd/models/cache.py — Read-only mmap model cache.
-vramd/models/metadata.py — GGUF metadata inspection using bundled llama.cpp tooling.
-vramd/models/estimator.py — Preliminary RAM and VRAM estimation.
+vramd/models/metadata.py — Full GGUF metadata and tensor inspection using the installed llama.cpp GGUF Python package.
+vramd/models/estimator.py — Preliminary RAM and VRAM estimation using tensor-level layer accounting.
 Existing infrastructure
 vramd/monitor/system.py — System resource monitoring.
 vramd/monitor/gpu.py — GPU monitoring.
@@ -32,16 +34,19 @@ Model registration never automatically loads models.
 Application startup must not warm model pages or allocate GPU resources.
 Model caching uses mmap.
 No memory locking by default.
-GGUF inspection uses the Python tooling bundled with the custom llama.cpp build.
+GGUF inspection uses the Python tooling from the custom llama.cpp installation, installed in the project virtual environment.
+Full tensor inspection is retained for memory estimation.
 Memory estimates are preliminary and must not be treated as guaranteed capacity.
 Resource allocation must account for KV cache and runtime overhead.
+GPU-layer estimation should use tensor-level information rather than simple proportional layer counts.
 
 See PROJECT_CONTEXT.txt for complete architecture decisions.
 
 3. KNOWN IMPLEMENTATION LIMITATIONS
 LifecycleController requires review.
 InferenceScheduler requires review.
-ModelMemoryEstimator uses preliminary proportional GPU-layer estimates.
+ModelMemoryEstimator uses preliminary tensor-level GPU-layer estimates.
+Actual llama.cpp tensor placement, including output-layer handling, requires further refinement.
 KV cache and runtime overhead are not yet included in estimates.
 GGUF metadata extraction requires validation against actual model files.
 Manager integration has not been tested.
@@ -51,9 +56,10 @@ CLI and application entry point require completion.
 
 Continue implementation without running tests or inference.
 
-Review and improve ModelMetadataInspector.
-Improve ModelMemoryEstimator accuracy.
-Implement automatic GPU-layer selection.
+Finalize and synchronize ModelMetadataInspector changes.
+Finalize and synchronize ModelMemoryEstimator changes.
+Reconcile tensor accounting with llama.cpp GPU-layer semantics.
+Implement automatic GPU-layer selection based on available RAM/VRAM budgets.
 Review and refine LifecycleController.
 Review and refine InferenceScheduler.
 Implement inference request representation and validation.
@@ -82,6 +88,8 @@ Controlled inference tests.
 
 Avoid loading large models unnecessarily.
 
+No inference, model loading or GPU allocation during the current implementation phase.
+
 6. NEXT CHAT HANDOVER
 
 Before continuing:
@@ -94,20 +102,31 @@ Verify the current contents of files before editing.
 Do not assume previous implementation instructions were successfully applied without checking.
 Immediate next task
 
-Review vramd/models/metadata.py and vramd/models/estimator.py.
+Implement automatic GPU-layer selection based on available resource budgets.
 
-Then implement automatic GPU-layer selection based on available resource budgets.
+Before implementation:
+
+Verify the revised metadata and estimator files.
+Account for llama.cpp GPU-layer semantics.
+Account for RAM and VRAM safety limits.
+Preserve existing project architecture.
 
 Do not run tests, load models or execute inference yet.
 
 7. PROJECT ENVIRONMENT
+
 Platform: Linux / WSL2.
 GPU: NVIDIA GTX 1050, 4 GB VRAM.
 CUDA architecture: sm_61.
 Backend: Custom llama.cpp build.
+llama.cpp build directory: ~/llama.cpp/build-cuda/.
 GGUF Python tooling: ~/llama.cpp/gguf-py/.
+GGUF package: Installed in project virtual environment.
 Development environment: Existing Python virtual environment.
 
 Never recreate the virtual environment unnecessarily.
 
-PROJECT: betterVRAMd PHASE: 1 CURRENT MILESTONE: Core infrastructure NEXT TASK: Review metadata and estimator, then automatic GPU-layer selection.
+PROJECT: betterVRAMd
+PHASE: 1
+CURRENT MILESTONE: Core infrastructure
+NEXT TASK: Automatic GPU-layer selection.

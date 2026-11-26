@@ -1,7 +1,7 @@
 
-from vramd.models.registry import ModelRegistry, ModelInfo
 from vramd.models.cache import RAMCacheManager
 from vramd.models.metadata import ModelMetadataInspector
+from vramd.models.registry import ModelInfo, ModelRegistry
 
 
 class LifecycleController:
