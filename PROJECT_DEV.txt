@@ -121,7 +121,7 @@ Includes:
 - Request timeout
 - Health-check interval
 - Maximum parallel requests
-- Optional API authentication
+- Optional API authentication File to be used in --api-key-file for llama.cpp
 
 Configuration is loaded through VRAMdConfig and TOML_MAPPING.
 Environment variables take precedence over TOML.

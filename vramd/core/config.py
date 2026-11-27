@@ -62,7 +62,7 @@ class VRAMdConfig(BaseModel):
     server_request_timeout_seconds: int = Field(default=300, ge=1)
     server_health_check_interval_seconds: float = Field(default=2.0, gt=0)
     server_max_parallel_requests: int = Field(default=1, ge=1)
-    server_api_key: str | None = None
+    server_api_key_file: Path | None = None
 
     # Worker
     use_separate_process: bool = True
@@ -97,7 +97,7 @@ class VRAMdConfig(BaseModel):
     @field_validator(
         "project_root", "model_directory", "cache_directory",
         "log_directory", "runtime_directory", "config_directory",
-        "llama_cpp_directory", "llama_cli", "llama_server",
+        "llama_cpp_directory", "llama_cli", "llama_server", "server_api_key_file",
         mode="before",
     )
     @classmethod
@@ -154,7 +154,7 @@ TOML_MAPPING = {
         "server_request_timeout_seconds": "server_request_timeout_seconds",
         "server_health_check_interval_seconds": "server_health_check_interval_seconds",
         "server_max_parallel_requests": "server_max_parallel_requests",
-        "server_api_key": "server_api_key",
+        "server_api_key_file": "server_api_key_file",
 
     },
     "worker": {
