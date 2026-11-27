@@ -105,6 +105,7 @@ enabled = true
 queue_enabled = true
 max_queue_size = 10
 priority_enabled = false
+history_limit = 1000
 
 # ============================================================
 # MODEL REGISTRY

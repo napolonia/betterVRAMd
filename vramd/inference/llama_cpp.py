@@ -16,6 +16,7 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from vramd.core.config import VRAMdConfig
 from vramd.inference.base import (
     BackendUnavailableError,
     InferenceBackend,
@@ -31,7 +32,7 @@ from vramd.inference.base import (
 class LlamaCppBackend(InferenceBackend):
     """HTTP client and command builder for llama-server."""
 
-    def __init__(self, config, port: int | None = None):
+    def __init__(self, config: VRAMdConfig, port: int | None = None):
         self.config = config
 
         if config.server_dynamic_port and port is None:

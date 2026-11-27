@@ -75,6 +75,7 @@ class VRAMdConfig(BaseModel):
     queue_enabled: bool = True
     max_queue_size: int = Field(default=10, ge=1)
     priority_enabled: bool = False
+    scheduler_history_limit: int = Field(default=1000, ge=0)
 
     # Registry
     registry_enabled: bool = True
@@ -168,6 +169,7 @@ TOML_MAPPING = {
         "queue_enabled": "queue_enabled",
         "max_queue_size": "max_queue_size",
         "priority_enabled": "priority_enabled",
+        "history_limit": "scheduler_history_limit",
     },
     "registry": {
         "enabled": "registry_enabled",

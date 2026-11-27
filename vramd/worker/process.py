@@ -9,8 +9,8 @@ import subprocess
 import time
 from pathlib import Path
 
+from vramd.core.config import VRAMdConfig
 from vramd.inference.llama_cpp import LlamaCppBackend
-
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ class WorkerShutdownError(WorkerProcessError):
 class WorkerProcess:
     """Own the llama-server subprocess lifecycle."""
 
-    def __init__(self, config):
+    def __init__(self, config: VRAMdConfig):
         self.config = config
         self._process: subprocess.Popen | None = None
         self._backend: LlamaCppBackend | None = None

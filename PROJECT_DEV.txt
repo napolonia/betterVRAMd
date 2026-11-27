@@ -118,17 +118,47 @@ Development notes:
 
 MODULE: vramd/core/scheduler.py
 
-Status : INITIAL IMPLEMENTATION
+Status : REVIEWED — IMPLEMENTATION IMPROVEMENTS SAVED Testing : UNTESTED
 
 Purpose:
 
- Inference request scheduling and queue coordination.
+Inference request scheduling, priority ordering and queue management.
 
+Implemented functionality:
 
-Development notes:
+Request registration and validation.
+Priority-based heap queue.
+FIFO ordering for equal priorities.
+Explicit request lifecycle states.
+Request completion, failure and cancellation.
+Configurable terminal history retention.
+Automatic pruning of oldest terminal requests.
+Protection of queued and running requests during pruning.
+Thread-safe access using threading.RLock.
+Single-running-request enforcement.
+Safe handling of stale queue entries.
+Shallow-copy snapshots through get_request() and list_requests().
+Internal request retrieval through _get_request_unlocked().
+Scheduler statistics through get_status().
 
- - Initial structure exists.
- - Scheduler integration requires further review.
+Configuration:
+
+scheduler_enabled
+queue_enabled
+max_queue_size
+priority_enabled
+scheduler_history_limit
+
+Known limitations:
+
+next_request() still exposes the internal request object.
+Mutable nested fields such as result remain shared references in shallow copies.
+Scheduler execution loop is not implemented.
+LifecycleController integration is not implemented.
+Backend dispatch is not implemented.
+Model registration validation is not integrated.
+
+All changes are saved locally but remain untested.
 
 01.2 MODELS
 
@@ -478,10 +508,28 @@ The following limitations and outstanding implementation concerns are currently 
  - Failed-start cleanup requires validation.
 
 04.5 SCHEDULER
- - Scheduler integration requires review.
- - Inference request coordination requires completion.
- - Lifecycle integration requires validation.
- - Single-worker enforcement requires integration review.
+
+Implemented:
+
+Priority-based request queue.
+Request lifecycle and status transitions.
+Configurable terminal history retention.
+Thread-safe scheduler operations using RLock.
+Single-running-request enforcement.
+Stale queue-entry handling.
+Public request snapshots.
+Internal request retrieval helper.
+
+Outstanding:
+
+Complete request encapsulation, including next_request().
+Validate model registration when accepting requests.
+Implement inference execution coordination.
+Integrate model residency decisions through LifecycleController.
+Dispatch requests through the active backend.
+Ensure completion and failure handling across the execution path.
+
+Testing remains deferred.
 
 04.6 CLI AND APPLICATION
  - CLI commands require completion.
@@ -614,105 +662,85 @@ Development Handoff — VRAMd
 
 Date: 2026-11-27
 
-Current development position
+Current development position:
 
-We are reviewing and improving the VRAMd codebase file by file.
+The project is in Phase 1 — Core Infrastructure Implementation.
 
-The user has saved the individual code reviews and will append them to this development document as additional reference material.
+Development is proceeding through individual file reviews and small, controlled implementation changes.
 
-Important: Do not restart the review of previously reviewed files. Continue from the exact stopping point documented below.
+Latest reviewed components:
 
-Architecture decisions
-Model lifecycle
-LifecycleController coordinates model registration, inspection, caching, loading and unloading.
-WorkerProcess exclusively owns the llama-server subprocess lifecycle.
-LlamaCppBackend builds server commands and communicates with the running server.
-Restart-on-crash functionality is deferred to future work.
-Inference interface
-Use the existing llama.cpp HTTP server and its available WebUI for now.
-Do not build a dedicated VRAMd inference interface yet.
-Keep the backend abstraction independent of the frontend.
-A custom frontend/API can be considered when the underlying architecture is stable.
-Memory estimation
-The current estimator is incomplete.
-More comprehensive memory estimation will be implemented in a future development phase.
-Do not expand the estimator during the current review unless a critical correctness issue is discovered.
-Dynamic port allocation
-A TODO comment documents the allocation race associated with dynamic port selection.
-This is acknowledged future work.
-Completed reviews
+vramd/core/scheduler.py
+vramd/core/manager.py
+vramd/core/lifecycle.py
+vramd/worker/process.py
 
-The following files have been reviewed:
+Scheduler development:
 
-core/lifecycle.py
-worker/process.py
-inference/llama_cpp.py
-Manager implementation (VRAMdManager)
-models/selector.py
-models/estimator.py
-core/budget.py
-models/cache.py
-models/registry.py
-models/metadata.py
-core/config.py
-core/scheduler.py — initial review and thread-safety improvements.
+The scheduler has received thread-safety and history-management improvements.
 
-Additional review notes are maintained separately and will be appended to this document.
+Changes saved locally:
 
-Current file: core/scheduler.py
+threading.RLock.
+Protected scheduler state operations.
+Configurable terminal history retention.
+Oldest-first history pruning.
+Stale heap-entry handling.
+Single-running-request enforcement.
+Shallow-copy request retrieval.
+_get_request_unlocked() internal helper.
+Priority type validation.
+Explicit get_status() return annotation.
 
-Thread-safety improvements have been implemented and approved.
+Status: IMPLEMENTATION IMPROVEMENTS SAVED — UNTESTED.
 
-Added threading.RLock.
-Protected all eight public methods that access shared scheduler state:
-submit
-next_request
-complete
-fail
-cancel
-get_request
-list_requests
-get_status
-Nested locking is safe because RLock is used.
-Import ordering has been organized.
-Comments document two outstanding considerations:
-list_requests() returns mutable request objects.
-get_request() returns a mutable request object.
+Current review position:
 
-These two concerns are acknowledged but intentionally deferred. Do not change them without discussing the implications first.
+VRAMdManager has been inspected.
 
-Status: Saved and approved.
+The manager owns both InferenceScheduler and LifecycleController.
 
-Next task
+There is currently no dedicated inference execution loop.
 
-Continue reviewing core/scheduler.py.
+The scheduler does not yet dispatch requests to the backend.
 
-The next topic is request-history retention.
+The existing component ownership boundaries must be preserved.
 
-Discuss a configurable retention limit to prevent _requests from growing indefinitely.
+Immediate next task:
 
-Consider:
+Complete the scheduler encapsulation review.
 
-Whether completed, failed and cancelled requests should be eligible for removal.
-Whether queued and running requests must always be retained.
-Whether the retention limit should be configurable.
-How request IDs and heap entries should behave when old requests are removed.
+In particular:
 
-Do not implement anything until the design has been discussed and agreed.
+Verify internal state transitions use _get_request_unlocked().
+Review next_request() returning an internal request object.
+Decide whether next_request() should return a shallow-copy snapshot.
+Confirm that external callers cannot modify internal scheduler state.
 
-Working agreement
-Review one file or one clearly defined concern at a time.
-Explain the issue and proposed solution before asking for code changes.
-Avoid unnecessary architectural complexity.
-Preserve existing responsibilities and separation of concerns.
-Do not introduce unrelated refactoring.
-Wait for confirmation before considering a proposed change approved.
-The user saves changes locally and confirms when ready.
-Once a file is approved and saved, move to the next task.
-Do not repeatedly revisit previously approved files unless a new dependency or critical issue requires it.
+After completing this review, resume LifecycleController and manager integration planning.
 
-Immediate starting point: Request-history retention in core/scheduler.py.
+Architecture decisions:
 
+WorkerProcess exclusively owns the llama-server subprocess.
+LlamaCppBackend communicates with the running server.
+LifecycleController coordinates model residency and loading.
+InferenceScheduler owns request ordering and state transitions.
+VRAMdManager coordinates application-level components.
+Only one inference request may run at a time.
+Only one inference model may be resident at a time.
+
+Development restrictions:
+
+No inference execution.
+No model loading.
+No unnecessary GPU workloads.
+No integrated testing during this phase.
+One logical change at a time.
+User approval before implementation changes.
+
+GitHub may not contain the latest implementation.
+
+User-supplied local files are authoritative.
 
 REVIEW OF EACH FILE IS AT THE END = <REVIEW>
 

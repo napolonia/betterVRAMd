@@ -226,16 +226,15 @@ LLAMA.CPP ENVIRONMENT
 
 Inference Engine : llama.cpp Primary Backend : llama-server Build Identifier : b1-41c7a1b
 
-Executable:
+Executables:
 
- ~/llama.cpp/build-cuda/bin/llama-cli
-
+~/llama.cpp/build-cuda/bin/llama-server ~/llama.cpp/build-cuda/bin/llama-cli
 
 The custom CUDA-enabled llama.cpp installation is the authoritative source for:
 
- - Inference executables.
- - Python GGUF tooling.
- - Associated GGUF utilities.
+Inference executables.
+Python GGUF tooling.
+Associated GGUF utilities.
 
 04.2 PREVIOUSLY TESTED MODEL
 
@@ -859,26 +858,30 @@ llama-server remains the primary inference approach.
 
 Module:
 
- vramd/worker/process.py
-
+vramd/worker/process.py
 
 Responsibility:
 
- Own the llama-server subprocess lifecycle.
-
+Exclusively own the llama-server subprocess lifecycle.
 
 Responsibilities:
 
- - Process creation.
- - Process tracking.
- - Startup readiness monitoring.
- - Graceful shutdown.
- - Forced termination when configured.
- - Runtime port tracking.
- - Failed-start cleanup.
-
+Process creation.
+Process tracking.
+Startup readiness monitoring.
+Graceful shutdown.
+Forced termination when configured.
+Runtime port tracking.
+Failed-start cleanup.
+Retention of process references when cleanup fails.
 
 The worker owns the llama-server child process.
+
+LifecycleController coordinates its use but does not directly create or terminate subprocesses.
+
+LlamaCppBackend communicates with the running server.
+
+Worker termination must complete before associated model resources are released.
 
 10.6 PROCESS AND MODEL LIFECYCLE
 
@@ -901,21 +904,30 @@ CONFIGURATION AND APPLICATION OPERATION
 
 File:
 
- config/default.toml
-
+config/default.toml
 
 Configuration sections:
 
- - application
- - paths
- - gpu
- - memory
- - inference
- - worker
- - scheduler
- - registry
- - api
- - logging
+application
+paths
+gpu
+memory
+inference
+worker
+scheduler
+registry
+api
+logging
+
+Scheduler configuration includes:
+
+enabled
+queue_enabled
+max_queue_size
+priority_enabled
+history_limit
+
+Corresponding Python configuration fields are defined in VRAMdConfig.
 
 11.2 INITIAL CONFIGURATION VALUES
 
@@ -927,7 +939,7 @@ They are not universal hardware requirements.
 
 11.3 SERVER CONFIGURATION
 
-Server configuration is defined in VRAMDConfig and config/default.toml.
+Server configuration is defined in VRAMdConfig and config/default.toml.
 
 Settings include:
 
@@ -1034,7 +1046,7 @@ Receives:
  - RAMCacheManager.
  - ModelMetadataInspector.
  - ModelLayerSelector.
- - VRAMDConfig.
+ - VRAMdConfig.
 
 
 Responsibilities:
@@ -1160,21 +1172,95 @@ They must never:
 
 Module:
 
- vramd/core/scheduler.py
-
+vramd/core/scheduler.py
 
 Owned directly by VRAMdManager.
 
-Responsible for:
+Responsibility:
 
- - Inference scheduling.
- - Queue coordination.
- - Request coordination.
+Manage inference requests, scheduling order, queue state and request history.
 
+Current functionality:
 
-Must respect the single-active-model and single-worker architectural constraints.
+Inference request registration.
+Request ID generation.
+Priority-based scheduling.
+FIFO ordering among requests with equal priority.
+Queue capacity enforcement.
+Request state tracking.
+Request cancellation.
+Completion and failure tracking.
+Configurable terminal request-history retention.
+Scheduler status reporting.
+Thread-safe access to shared scheduler state.
 
-Scheduling must not independently bypass LifecycleController model-loading decisions.
+Request states:
+
+QUEUED
+RUNNING
+COMPLETED
+FAILED
+CANCELLED
+
+THREAD SAFETY
+
+The scheduler uses threading.RLock to protect shared internal state.
+
+All public methods accessing shared scheduler state acquire the lock.
+
+Nested locking is supported through RLock.
+
+Internal methods that are called while the lock is already held may use unlocked helpers, such as _get_request_unlocked(), to avoid unnecessary nested locking.
+
+REQUEST HISTORY
+
+The scheduler retains terminal requests according to the configured scheduler_history_limit.
+
+Eligible for pruning:
+
+COMPLETED
+FAILED
+CANCELLED
+
+Never eligible for pruning:
+
+QUEUED
+RUNNING
+
+Request history retention must not interfere with active queue entries or running requests.
+
+REQUEST OBJECT OWNERSHIP
+
+Currently, get_request() and list_requests() expose references to mutable InferenceRequest objects.
+
+The scheduler lock protects internal operations but cannot protect against modifications made directly by external callers after those references are returned.
+
+This is an acknowledged limitation requiring a future design decision.
+
+EXECUTION INTEGRATION
+
+The scheduler currently manages and tracks inference requests.
+
+It does not yet own a dedicated inference execution loop or perform backend dispatch.
+
+Future execution integration must:
+
+Validate requested model identity.
+Respect model residency.
+Coordinate model loading through LifecycleController.
+Use the active backend exposed through the lifecycle.
+Preserve single-worker enforcement.
+Respect resource-management decisions.
+
+ARCHITECTURAL RESTRICTIONS
+
+Must not independently create or terminate inference workers.
+Must not independently load or unload models.
+Must not bypass LifecycleController.
+Must not permit multiple active inference models.
+Must not permit concurrent inference workers.
+
+Scheduler execution and backend integration remain separate from request scheduling and queue management.
 
 12.11 WORKER PROCESS
 
@@ -1334,13 +1420,18 @@ The following decisions are established and must not be changed casually.
  - Model mappings and inference residency are separate concepts.
 
 14.4 INFERENCE ARCHITECTURE
+
  - llama-server is the primary backend.
  - The inference backend does not own the server subprocess.
- - WorkerProcess owns subprocess lifecycle.
+ - WorkerProcess exclusively owns subprocess lifecycle.
  - LifecycleController coordinates model lifecycle.
- - InferenceScheduler coordinates request execution.
- - Scheduling must respect lifecycle and resource-management
-   decisions.
+ - InferenceScheduler manages request registration, queueing, scheduling and history.
+ - Scheduler shared state is protected by threading.RLock.
+ - Terminal request history is subject to configurable retention.
+ - Queued and running requests must never be pruned.
+ - Scheduler execution and backend dispatch remain future integration work.
+ - Scheduling must respect lifecycle and resource-management decisions.
+ - No component may bypass single-model or single-worker enforcement.
 
 14.5 COMPONENT OWNERSHIP
  - VRAMdManager owns application-level components.

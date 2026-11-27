@@ -5,9 +5,11 @@ import heapq
 import itertools
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Any
+
+from vramd.core.config import VRAMdConfig
 
 
 class RequestStatus(str, Enum):
@@ -35,18 +37,20 @@ class InferenceRequest:
 class InferenceScheduler:
     """Manage inference requests and scheduling order."""
 
-    def __init__(self, config):
+    def __init__(self, config: VRAMdConfig):
         self._lock = threading.RLock() #to protect all shared scheduler state
 
         self.enabled = config.scheduler_enabled
         self.queue_enabled = config.queue_enabled
         self.max_queue_size = config.max_queue_size
         self.priority_enabled = config.priority_enabled
+        self.history_limit = config.scheduler_history_limit
 
         self._request_ids = itertools.count()
         self._sequence = itertools.count()
         self._queue: list[tuple[int, int, int]] = []
         self._requests: dict[int, InferenceRequest] = {}
+
 
     def submit(
         self,
@@ -65,8 +69,8 @@ class InferenceScheduler:
             if not isinstance(prompt, str) or not prompt.strip():
                 raise ValueError("Prompt cannot be empty.")
 
-            if not isinstance(priority, int):
-                raise ValueError("Priority must be an integer.")
+            if not isinstance(priority, int) or isinstance(priority, bool):
+                raise TypeError("Priority must be an integer.")
 
             queued_count = sum(
                 request.status == RequestStatus.QUEUED
@@ -111,9 +115,19 @@ class InferenceScheduler:
         """Retrieve the next queued request for execution."""
         with self._lock:
 
+            # Enforce single-request execution.
+            if any(
+                request.status == RequestStatus.RUNNING
+                for request in self._requests.values()
+            ):
+                return None
+
             while self._queue:
                 _, _, request_id = heapq.heappop(self._queue)
-                request = self._requests[request_id]
+                request = self._requests.get(request_id)
+
+                if request is None:
+                    continue
 
                 if request.status != RequestStatus.QUEUED:
                     continue
@@ -135,6 +149,8 @@ class InferenceScheduler:
             request.status = RequestStatus.COMPLETED
             request.finished_at = time.time()
 
+            self._prune_history()
+
     def fail(self, request_id: int, error: str) -> None:
         """Mark a running request as failed."""
         with self._lock:
@@ -144,6 +160,8 @@ class InferenceScheduler:
             request.error = error
             request.status = RequestStatus.FAILED
             request.finished_at = time.time()
+            
+            self._prune_history()
 
     def cancel(self, request_id: int) -> None:
         """Cancel a queued request."""
@@ -157,21 +175,31 @@ class InferenceScheduler:
 
             request.status = RequestStatus.CANCELLED
             request.finished_at = time.time()
+            
+            self._prune_history()
 
-    def get_request(self, request_id: int) -> InferenceRequest: #Internal callers are protected by the RLock, but external callers can modify the returned object.
-        """Retrieve a request by its ID."""
+    def get_request(self, request_id: int) -> InferenceRequest:
+        """Retrieve a snapshot of a request by its ID."""
         with self._lock:
             if request_id not in self._requests:
                 raise KeyError(f"Unknown request: {request_id}")
 
-            return self._requests[request_id]
+            # Return a shallow copy to prevent external modification of
+            # internal scheduler state. Mutable fields such as result are
+            # still shared references and must not be modified by callers.
+            return replace(self._requests[request_id])
 
     def list_requests(self) -> list[InferenceRequest]:
-        """Return all registered requests."""
+        """Return snapshots of all registered requests."""
         with self._lock:
-            return list(self._requests.values()) #This copies the list, but not the request objects. A caller can modify a request without acquiring the scheduler lock.
+            # Shallow copies protect internal request state from external
+            # modification. Mutable fields such as result remain shared.
+            return [
+                replace(request)
+                for request in self._requests.values()
+            ]
 
-    def get_status(self) -> dict:
+    def get_status(self) -> dict[str, bool | int]:
         """Return current scheduler statistics."""
         with self._lock:
             return {
@@ -197,6 +225,47 @@ class InferenceScheduler:
                     for r in self._requests.values()
                 ),
             }
+
+    def _get_request_unlocked(
+        self,
+        request_id: int,
+    ) -> InferenceRequest:
+        """Retrieve an internal request. Caller must hold _lock."""
+
+        if request_id not in self._requests:
+            raise KeyError(f"Unknown request: {request_id}")
+
+        return self._requests[request_id]
+
+    def _prune_history(self) -> None:
+        """Remove the oldest terminal requests beyond the history limit."""
+
+        terminal_statuses = {
+            RequestStatus.COMPLETED,
+            RequestStatus.FAILED,
+            RequestStatus.CANCELLED,
+        }
+
+        terminal_requests = sorted(
+            (
+                request
+                for request in self._requests.values()
+                if request.status in terminal_statuses
+            ),
+            key=lambda request: (
+                request.finished_at,
+                request.request_id,
+            ),
+        )
+
+        excess = len(terminal_requests) - self.history_limit
+
+        if excess <= 0:
+            return
+
+        for request in terminal_requests[:excess]:
+            del self._requests[request.request_id]
+
 
     @staticmethod
     def _require_running(request: InferenceRequest) -> None:
