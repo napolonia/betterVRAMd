@@ -102,18 +102,48 @@ Do not assume previous implementation instructions were successfully applied wit
 Preserve existing architecture and working code.
 Immediate next task
 
-Review vramd/inference/llama_cpp.py.
 
-Focus on:
+INFERENCE BACKEND ARCHITECTURE
 
-Backend configuration.
-Subprocess management.
-llama.cpp executable discovery.
-GPU-layer argument handling.
-Resource-safe execution.
-Separation between backend execution and lifecycle management.
+Agreed architecture:
+Primary: llama-server (persistent inference).
+Future optional backend: llama-cli.
 
-Do not execute inference or load models.
+Planned modules:
+
+vramd/inference/base.py
+Status: Not implemented.
+Purpose: Common backend interface.
+
+vramd/inference/llama_cpp.py
+Status: Not implemented.
+Purpose: Primary llama-server backend.
+
+vramd/inference/llama_cli.py
+Status: Future / not implemented.
+Purpose: Optional CLI backend for testing and alternative execution.
+
+Implementation order:
+
+1. Update project documentation.
+2. Implement base.py.
+3. Implement llama_cpp.py.
+4. Review worker/process.py and integrate persistent server lifecycle.
+5. Implement inference request handling.
+6. Integrate LifecycleController and InferenceScheduler.
+7. Implement llama_cli.py only when required.
+8. Complete remaining application integration.
+9. Conduct controlled testing.
+
+IMPORTANT:
+
+No inference, model loading, GPU allocation or expensive tests during implementation.
+
+Immediate next task:
+
+Implement vramd/inference/base.py.
+
+Then implement vramd/inference/llama_cpp.py.
 
 7. PROJECT ENVIRONMENT
 

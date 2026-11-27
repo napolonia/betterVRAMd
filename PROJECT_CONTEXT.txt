@@ -2,6 +2,7 @@ betterVRAMd — PROJECT CONTEXT / HANDOVER
 
 Last updated: 2026-11-26
 
+
 1. PROJECT OBJECTIVE
 
 Build betterVRAMd, a self-contained Linux/WSL2 VRAM manager that manages its own inference workloads.
@@ -9,23 +10,20 @@ Build betterVRAMd, a self-contained Linux/WSL2 VRAM manager that manages its own
 Core objective:
 
 Keep model files/pages available in system RAM when practical.
-Keep model-owned VRAM allocations at zero while idle.
-Allocate GPU resources only when inference is requested.
-Release GPU resources immediately after inference.
+Keep model-owned VRAM allocations at zero when no model is resident.
+Allocate GPU resources when a model is loaded for inference.
+Keep loaded models available across multiple inference requests.
+Release GPU resources when models are unloaded or evicted.
 Verify actual GPU memory reclamation.
 Support CPU-only, hybrid CPU/GPU and full GPU inference.
 Support multiple registered GGUF models.
 Use separate inference worker processes.
 Prioritize reliability and resource safety over inference speed.
 
-Phase 1 is Linux/WSL2 only.
+Model residency and inference activity are separate states.
+An idle inference queue does not necessarily mean the loaded model must be unloaded.
+Model unloading is controlled by the LifecycleController and resource-management policy.
 
-Out of scope for Phase 1:
-
-Windows companion service.
-ComfyUI integration.
-GUI.
-Windows integration.
 2. ENVIRONMENT
 
 Host:
@@ -210,6 +208,45 @@ Coordinate component startup and shutdown.
 Own component lifecycle.
 Expose application status.
 
+INFERENCE BACKEND ARCHITECTURE:
+
+Primary backend: llama.cpp using llama-server.
+
+llama-server provides persistent model residency and HTTP-based inference.
+
+The server remains running while its model is resident.
+Multiple inference requests can use the same loaded model without reloading weights.
+
+Backend responsibilities:
+
+base.py:
+Define the backend-independent inference interface.
+Define common lifecycle and inference contracts.
+Avoid llama.cpp-specific implementation details.
+
+llama_cpp.py:
+Implement the primary llama-server backend.
+Handle server configuration and command construction.
+Provide HTTP readiness, health and inference interfaces.
+Coordinate server operation with the worker process manager.
+
+llama_cli.py:
+Future optional llama-cli backend.
+Intended for testing, comparison and alternative execution modes.
+Not part of the initial implementation.
+Must implement the common backend interface.
+
+PROCESS OWNERSHIP
+
+worker/process.py owns inference worker process lifecycle.
+The worker owns the llama-server child process.
+The backend does not independently manage the application's overall lifecycle.
+LifecycleController coordinates model loading and unloading.
+
+Server termination must release its GPU allocations.
+Only one inference worker/server may be active at a time.
+
+
 6. EXISTING PROJECT STRUCTURE
 
 betterVRAMd/
@@ -231,8 +268,11 @@ betterVRAMd/
     │   ├── lifecycle.py
     │   ├── manager.py
     │   └── scheduler.py
-    ├── inference/
-    │   └── llama_cpp.py
+    inference/
+        ├── __init__.py
+        ├── base.py
+        ├── llama_cpp.py
+        └── llama_cli.py (future)
     ├── models/
     │   ├── cache.py
     │   ├── estimator.py
