@@ -1,3 +1,4 @@
+
 """Persistent llama.cpp server backend.
 
 This module builds llama-server commands and communicates with
@@ -93,13 +94,9 @@ class LlamaCppBackend(InferenceBackend):
         model_path: str | Path,
         gpu_layers: int,
         port: int | None = None,
+        mmproj_path: str | Path | None = None,
     ) -> list[str]:
-        """
-        Build the llama-server command.
-
-        This method does not execute or launch the command.
-        The worker owns process creation.
-        """
+        """Build the llama-server command without executing it."""
 
         executable = self.validate_executable()
         model = self.validate_model(model_path)
@@ -130,6 +127,10 @@ class LlamaCppBackend(InferenceBackend):
             str(self.config.server_max_parallel_requests),
             "--no-webui",
         ]
+
+        if mmproj_path is not None:
+            mmproj = self.validate_model(mmproj_path)
+            command.extend(["--mmproj", str(mmproj)])
 
         if self.api_key_file is not None:
             command.extend(
@@ -174,12 +175,7 @@ class LlamaCppBackend(InferenceBackend):
             return False
 
     def wait_until_ready(self) -> None:
-        """
-        Wait for llama-server readiness.
-
-        This waits for an already-started server.
-        It does not launch the process.
-        """
+        """Wait for an already-started server to become ready."""
 
         deadline = time.monotonic() + self.config.server_startup_timeout_seconds
 
@@ -204,6 +200,7 @@ class LlamaCppBackend(InferenceBackend):
         timeout: float | None = None,
     ) -> InferenceResult:
         """Submit an inference request to the persistent server."""
+
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("prompt cannot be empty")
 
@@ -216,11 +213,16 @@ class LlamaCppBackend(InferenceBackend):
         if max_tokens < 1:
             raise ValueError("max_tokens must be positive")
 
-        if not 0 <= temperature:
+        if temperature < 0:
             raise ValueError("temperature cannot be negative")
 
         if not 0 < top_p <= 1:
             raise ValueError("top_p must be greater than 0 and at most 1")
+
+        if stop is not None and not all(
+            isinstance(item, str) and item for item in stop
+        ):
+            raise ValueError("stop must contain non-empty strings")
 
         payload = {
             "prompt": prompt,
@@ -232,11 +234,6 @@ class LlamaCppBackend(InferenceBackend):
 
         if stop:
             payload["stop"] = stop
-
-        if stop is not None and (
-            not all(isinstance(item, str) and item for item in stop)
-        ):
-            raise ValueError("stop must contain non-empty strings")
 
         request = Request(
             f"{self.base_url}/completion",

@@ -70,6 +70,7 @@ class WorkerProcess:
         self,
         model_path: str | Path,
         gpu_layers: int,
+        mmproj_path: str | Path | None = None,
     ) -> LlamaCppBackend:
         """Start llama-server and wait until it becomes ready."""
 
@@ -96,6 +97,7 @@ class WorkerProcess:
                 model_path=model_path,
                 gpu_layers=gpu_layers,
                 port=self._port,
+                mmproj_path=mmproj_path,
             )
 
             logger.info(

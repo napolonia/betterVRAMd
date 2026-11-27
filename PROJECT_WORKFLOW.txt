@@ -1,242 +1,676 @@
+=============================================================================== betterVRAMd PROJECT DEVELOPMENT WORKFLOW
 
-PROJECT_WORKFLOW.txt
-betterVRAMd — Development Workflow
+Document : PROJECT_WORKFLOW.txt Project : betterVRAMd Last Updated : 2026-11-27 Document Role : Development Procedures and Collaboration Rules
 
-============================================================
-1. DEVELOPMENT APPROACH
-============================================================
+===============================================================================
 
-Implement the architecture before starting testing.
+PURPOSE
 
-Work on one logical development task at a time.
+This document defines how betterVRAMd development is conducted.
 
-Avoid unnecessary experiments and temporary implementations.
+It establishes consistent procedures for:
 
-Keep development incremental and controlled.
+ - Code implementation.
+ - Code review and modification.
+ - Architecture preservation.
+ - Testing.
+ - Resource management.
+ - Documentation maintenance.
+ - Git operations.
+ - Development handovers.
+ - Collaboration between development sessions.
 
-Update documentation after significant implementation
-or architectural changes.
 
-Prioritize code over lengthy explanations.
+The objective is to maintain controlled, incremental development without introducing unnecessary complexity or resource consumption.
 
-============================================================
-2. CODING RULES
-============================================================
+===============================================================================
 
-CREATE:
-Provide the complete new file.
+DEVELOPMENT APPROACH
+01.1 GENERAL PRINCIPLES
+ [01] Implement the architecture before starting integrated testing.
 
-EDIT:
-Provide only the specific additions, removals or replacements,
-unless a complete file replacement is explicitly agreed.
+ [02] Work on one logical development task at a time.
 
-Always specify the exact file path.
+ [03] Keep implementation incremental and controlled.
 
-Preserve existing working code.
+ [04] Avoid unnecessary experiments and temporary implementations.
 
-Never assume a file's contents without checking.
+ [05] Preserve existing working code.
 
-Never assume code was saved or implemented without confirmation.
+ [06] Prefer small, reviewable changes over unnecessary rewrites.
 
-Avoid unnecessary dependencies.
+ [07] Avoid introducing dependencies without a clear requirement.
 
-Never recreate the existing virtual environment unnecessarily.
+ [08] Prioritize implementation over lengthy explanations.
 
-Keep explanations concise and technical.
+ [09] Update documentation after significant implementation
+      or architectural changes.
 
-Do not repeat unchanged code.
+ [10] Never assume implementation or testing has occurred
+      without confirmation or supporting evidence.
 
-Prefer implementation over architectural repetition.
+01.2 DEVELOPMENT PRIORITIES
 
-============================================================
-3. SOURCE OF TRUTH
-============================================================
+Development priorities, in order:
 
-User-supplied current file contents are authoritative.
+ 1. System stability.
+ 2. Architectural correctness.
+ 3. Resource safety.
+ 4. Implementation completeness.
+ 5. Maintainability.
+ 6. Controlled testing.
+ 7. Performance optimization.
 
-GitHub is a reference, not guaranteed to reflect the latest
-local repository state.
 
-GitHub content may be cached or outdated.
+Inference speed is not the primary development objective.
 
-Never repeatedly retrieve a file when its contents appear
-outdated.
+01.3 DEVELOPMENT SEQUENCE
 
-When necessary, request the current local file from the user.
+The general development sequence is:
 
-A confirmed local change must not be assumed committed
-or pushed.
+ REVIEW
+    |
+    v
+ PLAN
+    |
+    v
+ IMPLEMENT
+    |
+    v
+ REVIEW CHANGES
+    |
+    v
+ CONFIRM IMPLEMENTATION
+    |
+    v
+ UPDATE DOCUMENTATION
+    |
+    v
+ CONTINUE TO NEXT TASK
 
-Never assume a commit or push has occurred without
-user confirmation.
 
-============================================================
-4. COLLABORATION RULES
-============================================================
+Testing is conducted according to the project's testing policy.
 
-Work on one file or logical task at a time.
+===============================================================================
 
-After providing code:
+CODING RULES
+02.1 CREATING FILES
 
-1. Wait for the user to save it.
-2. Confirm the file is saved.
-3. Proceed to the next task.
+When creating a new source file:
 
-Do not repeatedly request information already supplied.
+ - Provide the complete file contents.
+ - Specify the exact destination path.
+ - Include required imports and dependencies.
+ - Follow the established project architecture.
+ - Avoid unrelated functionality.
 
-Do not repeat completed implementation details.
+02.2 EDITING EXISTING FILES
 
-Keep responses short to minimize unnecessary conversation
-and browser resource consumption.
+When modifying an existing file:
 
-Prioritize actual code and actionable changes.
+ - Check its current contents first.
+ - Identify the exact changes required.
+ - Prefer specific additions, removals or replacements.
+ - Provide complete file replacement only when explicitly
+   agreed or when it is clearly safer.
 
-Wait for confirmation before moving to the next task.
+ - Specify the exact file path.
+ - Preserve existing working functionality.
+ - Avoid repeating unchanged code.
 
-============================================================
-5. SYSTEM RESOURCE CONSTRAINTS
-============================================================
+02.3 IMPLEMENTATION INTEGRITY
+ - Never assume a file's contents without checking.
+ - Never assume code was saved.
+ - Never assume code was implemented without confirmation.
+ - Never silently remove existing functionality.
+ - Never introduce unrelated architectural changes.
+ - Avoid unnecessary dependencies.
+ - Keep explanations concise and technical.
 
-Development machine:
+02.4 PYTHON ENVIRONMENT
 
-GPU: NVIDIA GTX 1050, 4 GB VRAM.
-Platform: Linux / WSL2.
-Backend: Custom llama.cpp build targeting sm_61.
-RAM: 16 GB physical memory.
+Project environment:
 
-VS Code, Chrome and other applications run alongside
-development.
+ ~/projects/betterVRAMd/.venv
 
-Therefore:
 
-Avoid unnecessary background processes.
-Avoid loading large GGUF models during development.
-Avoid unnecessary RAM and VRAM consumption.
-Never run inference unless explicitly requested.
-Do not perform expensive operations during implementation.
-Avoid actions that could freeze or destabilize the system.
+Rules:
 
-============================================================
-6. TESTING POLICY
-============================================================
+ - Preserve the existing virtual environment.
+ - Never recreate it unnecessarily.
+ - Avoid unnecessary package installations.
+ - Preserve compatibility with the configured Python environment.
+ - Use the existing custom llama.cpp installation.
 
-Testing is deferred until architecture implementation
-is complete.
+02.5 IMPLEMENTATION REVIEW
+
+Before considering a change complete:
+
+ - Review the modified code.
+ - Check imports and dependencies.
+ - Check component ownership.
+ - Check error handling.
+ - Check resource cleanup.
+ - Check compatibility with existing modules.
+ - Identify remaining limitations.
+
+
+Do not describe reviewed code as tested unless testing has actually been performed.
+
+===============================================================================
+
+SOURCE OF TRUTH
+03.1 PRIORITY OF INFORMATION
+
+The authoritative information sources are:
+
+ 1. Current user-supplied local file contents.
+ 2. Confirmed local implementation changes.
+ 3. Current repository contents.
+ 4. Previous development conversations.
+
+
+User-supplied current file contents take precedence.
+
+03.2 GITHUB REPOSITORY
+
+Repository:
+
+ https://github.com/napolonia/betterVRAMd
+
+
+GitHub is a reference, not a guaranteed representation of the latest local repository state.
+
+IMPORTANT:
+
+ - GitHub content may be cached or outdated.
+ - Never assume the repository reflects recent local changes.
+ - Never repeatedly retrieve a file when its contents appear
+   outdated.
+ - Request the current local file when necessary.
+
+03.3 LOCAL CHANGE CONFIRMATION
+
+A change being discussed or provided does not mean it has been saved locally.
+
+Likewise:
+
+ - Saved does not mean committed.
+ - Committed does not mean pushed.
+ - Pushed does not mean tested.
+
+
+Never assume a commit or push has occurred without user confirmation.
+
+03.4 HANDLING DISCREPANCIES
+
+When repository contents differ from user-supplied contents:
+
+ - Treat the supplied local contents as authoritative.
+ - Identify the discrepancy.
+ - Avoid overwriting newer local changes.
+ - Request clarification only when necessary.
+
+
+===============================================================================
+
+COLLABORATION PROCEDURE
+04.1 ONE TASK AT A TIME
+
+Work on one file or logical development task at a time.
+
+Do not combine unrelated implementation changes.
+
+04.2 IMPLEMENTATION HANDOVER
+
+After providing code or a modification:
+
+ [01] Wait for the user to apply the changes.
+
+ [02] Wait for confirmation that the changes were saved.
+
+ [03] Review the result when necessary.
+
+ [04] Update implementation status when appropriate.
+
+ [05] Proceed to the next task only after confirmation.
+
+04.3 COMMUNICATION
+ - Keep responses concise and technical.
+ - Avoid unnecessary explanations.
+ - Do not repeat completed implementation details.
+ - Do not request information already supplied.
+ - Ask only for missing information that is necessary.
+ - Prioritize actionable instructions and actual code.
+
+04.4 DOCUMENTATION RENEWAL
+
+Documentation renewal follows a separate controlled procedure.
+
+ - Work on one documentation file at a time.
+ - Preserve the information and established decisions.
+ - Improve organization and readability.
+ - Use plain-text ASCII-friendly formatting.
+ - Avoid HTML and unnecessary document-style formatting.
+ - Present documentation directly in the conversation.
+ - Do not generate downloadable files unless explicitly requested.
+
+
+IMPORTANT:
+
+ Minimize unnecessary output and avoid producing multiple
+ large documents in a single response.
+
+
+This is particularly important for maintaining browser stability.
+
+===============================================================================
+
+SYSTEM RESOURCE CONSTRAINTS
+05.1 DEVELOPMENT HARDWARE
+
+Platform:
+
+ Windows 10 / Linux WSL2
+
+
+GPU:
+
+ NVIDIA GeForce GTX 1050
+ 4 GB dedicated VRAM
+ CUDA architecture: sm_61
+
+
+System RAM:
+
+ 16 GB physical memory
+
+
+Backend:
+
+ Custom CUDA-enabled llama.cpp build.
+
+
+Development applications include:
+
+ - Chrome.
+ - VS Code.
+ - WSL2.
+ - Other Windows applications.
+
+05.2 RESOURCE SAFETY
+
+Development must account for limited system resources.
+
+Rules:
+
+ [01] Avoid unnecessary background processes.
+
+ [02] Avoid loading large GGUF models during development.
+
+ [03] Avoid unnecessary RAM and VRAM consumption.
+
+ [04] Avoid unnecessary GPU-intensive operations.
+
+ [05] Never run inference during the current implementation
+      phase.
+
+ [06] Do not perform expensive operations without justification.
+
+ [07] Avoid actions that could freeze or destabilize Windows.
+
+ [08] Preserve Chrome availability during development.
+
+05.3 INFERENCE RESTRICTION
+
+Inference testing is deferred until architecture implementation is complete.
+
+Previous inference workloads have caused Windows system freezes.
+
+System stability takes priority over development speed.
+
+No inference execution is permitted during the current implementation phase.
+
+===============================================================================
+
+TESTING POLICY
+06.1 TESTING STRATEGY
+
+Testing is deferred until architecture implementation is sufficiently complete.
 
 Do not run tests after every module.
 
 Do not execute inference during implementation.
 
-Final testing must be controlled and resource-conscious.
+The application should be assembled before controlled integrated testing begins.
 
-Separate:
-- Unit testing.
-- Integration testing.
-- Resource-management testing.
-- GPU/inference testing.
+06.2 TEST CATEGORIES
 
-Test with smaller models before attempting larger models.
+Testing must distinguish between:
 
-Never describe untested code as verified or production-ready.
+ UNIT TESTING
 
-============================================================
-7. ARCHITECTURE RULES
-============================================================
+      Validates individual modules independently.
 
-Respect decisions documented in PROJECT_CONTEXT.txt.
+ INTEGRATION TESTING
 
-Track implementation progress in PROJECT_DEV.txt.
+      Validates interactions between application components.
 
-Do not duplicate responsibilities between modules.
+ RESOURCE-MANAGEMENT TESTING
 
-Prefer dependency injection where appropriate.
+      Validates RAM and VRAM budgeting, allocation decisions
+      and cleanup behaviour.
 
-Keep model registration separate from model loading.
+ GPU MONITORING TESTING
 
-Never automatically load or warm models at application
-startup.
+      Validates passive GPU resource measurements.
 
-Memory estimates are not guarantees of available capacity.
+ INFERENCE TESTING
 
-Account for KV cache and runtime overhead before actual
-loading decisions.
+      Validates model loading, inference execution, unloading
+      and GPU memory reclamation.
 
-Preserve compatibility with the custom llama.cpp build.
+06.3 FINAL TESTING PROCEDURE
 
-Maintain strict ownership boundaries:
+When architecture implementation is complete:
+
+ [01] Review the complete application.
+
+ [02] Identify remaining implementation limitations.
+
+ [03] Perform appropriate unit tests.
+
+ [04] Perform integration tests.
+
+ [05] Validate resource-management behaviour.
+
+ [06] Validate GPU monitoring.
+
+ [07] Begin controlled inference testing.
+
+ [08] Start with smaller models.
+
+ [09] Monitor system RAM and VRAM.
+
+ [10] Verify model unloading and GPU memory reclamation.
+
+06.4 TESTING INTEGRITY
+ - Never describe untested code as verified.
+ - Never describe partially tested functionality as fully tested.
+ - Record testing scope and results.
+ - Record failures and corrective actions.
+ - Distinguish expected behaviour from observed behaviour.
+
+
+Testing must remain controlled and resource-conscious.
+
+===============================================================================
+
+ARCHITECTURAL RULES
+07.1 DOCUMENTED ARCHITECTURE
+
+Respect the architectural decisions established in:
+
+ PROJECT_CONTEXT.txt
+
+
+Track implementation progress in:
+
+ PROJECT_DEV.txt
+
+
+Development procedures are maintained in:
+
+ PROJECT_WORKFLOW.txt
+
+
+Do not casually change established architectural decisions.
+
+07.2 COMPONENT RESPONSIBILITIES
 
 CORE:
-Resource budgeting, scheduling and lifecycle decisions.
+
+ - Application coordination.
+ - Resource budgeting.
+ - Scheduling.
+ - Lifecycle decisions.
+
+
+MODEL LAYER:
+
+ - Model registration.
+ - GGUF metadata inspection.
+ - Memory estimation.
+ - GPU-layer selection.
+ - RAM cache management.
+
 
 INFERENCE BACKEND:
-Command construction, HTTP communication and inference.
+
+ - Backend interface.
+ - Command construction.
+ - HTTP communication.
+ - Inference request handling.
+
 
 WORKER:
-Subprocess creation, monitoring and termination.
+
+ - Subprocess creation.
+ - Process monitoring.
+ - Process termination.
+
 
 LIFECYCLE CONTROLLER:
-Model loading and unloading coordination.
 
-============================================================
-8. DOCUMENTATION AND GIT
-============================================================
+ - Model loading coordination.
+ - Model unloading coordination.
+ - Model lifecycle state.
 
-Three documentation files have distinct responsibilities:
 
-PROJECT_CONTEXT.txt:
-Stable architecture, environment and technical decisions.
+MONITORING:
 
-PROJECT_DEV.txt:
-Current implementation status, completed work,
-limitations and next development tasks.
+ - Passive system measurements.
+ - Passive GPU measurements.
 
-PROJECT_WORKFLOW.txt:
-Development and collaboration rules.
+07.3 OWNERSHIP RESTRICTIONS
+ - Do not duplicate responsibilities between modules.
+ - Prefer dependency injection where appropriate.
+ - Preserve established component ownership.
+ - Do not allow monitoring components to make allocation decisions.
+ - Do not allow inference backends to own worker processes.
+ - Do not allow the scheduler to bypass lifecycle decisions.
 
-After significant implementation changes:
+07.4 MODEL LIFECYCLE
+ - Model registration must remain separate from model loading.
+ - Registration must not load model weights.
+ - Application startup must not automatically load models.
+ - Application startup must not automatically warm model pages.
+ - Only one inference model may be resident at a time.
+ - Only one inference worker/server may be active at a time.
+ - Model switching requires unloading the previous model.
 
-1. Update the relevant documentation.
-2. Review consistency across all three files.
-3. Save documentation alongside the code changes.
+07.5 RESOURCE MANAGEMENT
+ - Resource budgeting must precede loading decisions.
+ - Memory estimates are not guarantees of available capacity.
+ - Account for KV cache and runtime overhead.
+ - Respect configured RAM and VRAM limits.
+ - Avoid indiscriminate memory locking.
+ - Verify GPU memory reclamation where possible.
 
-Git commits and pushes remain under user control.
-Never assume changes have been committed or pushed.
+07.6 LLAMA.CPP COMPATIBILITY
 
-============================================================
-9. COMMUNICATION PREFERENCES
-============================================================
+Preserve compatibility with the configured custom llama.cpp build.
 
-Be concise and technical.
+Installation:
 
-One step at a time.
+ ~/llama.cpp/build-cuda/
 
-Avoid lengthy explanations.
 
-Avoid repeating completed work.
+GGUF tooling:
 
-Do not ask questions whose answers are already documented.
+ ~/llama.cpp/gguf-py/
 
-Provide actual code whenever implementation is requested.
 
-Prioritize useful context over conversation history.
+Do not casually replace the configured backend or tooling with unrelated installations.
 
-============================================================
-10. NEW CHAT CONTINUITY
-============================================================
+===============================================================================
 
-At the beginning of a new chat:
+DOCUMENTATION AND GIT MANAGEMENT
+08.1 DOCUMENT RESPONSIBILITIES
 
-1. Read all three project documentation files.
-2. Treat GitHub as potentially cached.
-3. Check current local file contents when necessary.
-4. Identify the next unfinished task.
-5. Continue without repeating completed work.
+PROJECT_CONTEXT.txt
 
-If information is missing, ask only for the specific
-file or detail needed.
+ Stable project identity, environment, architecture,
+ design principles, component responsibilities and
+ architectural decisions.
 
-============================================================
 
-PROJECT: betterVRAMd
-DEVELOPMENT STYLE: Incremental, resource-conscious,
-implementation first.
+PROJECT_DEV.txt
+
+ Current implementation status, completed work,
+ incomplete modules, known limitations, testing status
+ and next development tasks.
+
+
+PROJECT_WORKFLOW.txt
+
+ Development procedures, coding rules, testing procedures,
+ documentation maintenance and collaboration rules.
+
+08.2 DOCUMENTATION MAINTENANCE
+
+After significant implementation or architectural changes:
+
+ [01] Update the relevant documentation.
+
+ [02] Review consistency across all three documents.
+
+ [03] Confirm that implementation status is accurate.
+
+ [04] Save documentation alongside the relevant code changes.
+
+
+Do not turn PROJECT_CONTEXT.txt into a development diary.
+
+Do not use PROJECT_DEV.txt as a replacement for stable architectural documentation.
+
+08.3 GIT OPERATIONS
+
+Git operations remain under user control.
+
+Rules:
+
+ - Never assume a commit has occurred.
+ - Never assume changes have been pushed.
+ - Do not overwrite uncommitted user changes.
+ - Do not perform commits or pushes without authorization.
+ - Preserve the existing repository history.
+
+
+The user confirms when repository changes have been committed or pushed.
+
+===============================================================================
+
+COMMUNICATION PREFERENCES
+
+Development communication should be:
+
+ - Concise.
+ - Technical.
+ - Direct.
+ - Incremental.
+ - Focused on implementation.
+
+
+Preferred working style:
+
+ [01] One task at a time.
+
+ [02] One file at a time when practical.
+
+ [03] Provide exact file paths.
+
+ [04] Provide actionable code changes.
+
+ [05] Avoid unnecessary architectural repetition.
+
+ [06] Avoid lengthy explanations.
+
+ [07] Do not repeat completed work.
+
+ [08] Do not ask questions whose answers are already documented.
+
+ [09] Wait for confirmation before moving to the next task.
+
+ [10] Prioritize useful technical context over conversation history.
+
+
+===============================================================================
+
+NEW CHAT CONTINUITY
+
+At the beginning of a new development session:
+
+ [01] Read PROJECT_CONTEXT.txt.
+
+ [02] Read PROJECT_DEV.txt.
+
+ [03] Read PROJECT_WORKFLOW.txt.
+
+ [04] Treat GitHub as potentially cached.
+
+ [05] Check current local file contents when necessary.
+
+ [06] Identify the latest confirmed implementation status.
+
+ [07] Identify the next unfinished development task.
+
+ [08] Respect all established architectural and resource
+      restrictions.
+
+ [09] Continue without repeating completed work.
+
+ [10] Update documentation when implementation status changes.
+
+10.1 MISSING INFORMATION
+
+If information is missing:
+
+ - Request only the specific file or detail required.
+ - Do not request all project files unnecessarily.
+ - Do not assume missing implementation details.
+ - Do not reconstruct local changes from outdated repository
+   contents.
+
+10.2 HANDOVER PRIORITY
+
+The latest confirmed local implementation and user-approved development decisions take precedence over previous conversation history.
+
+===============================================================================
+
+DEVELOPMENT COMPLETION PRINCIPLES
+
+A development task is not automatically complete because its initial implementation exists.
+
+Before marking a task complete, establish:
+
+ - The intended functionality has been implemented.
+ - Architectural responsibilities are preserved.
+ - Required integration points are addressed.
+ - Known limitations are documented.
+ - The implementation status is accurately recorded.
+
+
+Testing status must remain separate from implementation status.
+
+A module may be implemented but not yet tested.
+
+A module may be reviewed but not integration-tested.
+
+Never overstate the maturity or reliability of the application.
+
+=============================================================================== PROJECT IDENTIFICATION
+
+Project : betterVRAMd Development Style: Incremental and Resource-Conscious Implementation : Architecture First Testing : Controlled and Deferred Documentation : Plain-Text ASCII-Friendly Git Management : User Controlled
+
+=============================================================================== END OF PROJECT DEVELOPMENT WORKFLOW

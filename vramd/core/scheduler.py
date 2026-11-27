@@ -1,4 +1,6 @@
 
+"""Inference request scheduling and queue management."""
+
 import heapq
 import itertools
 import time
@@ -38,8 +40,9 @@ class InferenceScheduler:
         self.max_queue_size = config.max_queue_size
         self.priority_enabled = config.priority_enabled
 
+        self._request_ids = itertools.count()
         self._sequence = itertools.count()
-        self._queue = []
+        self._queue: list[tuple[int, int, int]] = []
         self._requests: dict[int, InferenceRequest] = {}
 
     def submit(
@@ -48,23 +51,40 @@ class InferenceScheduler:
         prompt: str,
         priority: int = 0,
     ) -> InferenceRequest:
+        """Register and enqueue an inference request."""
 
         if not self.enabled:
             raise RuntimeError("Scheduler is disabled.")
 
-        if not model_name:
+        if not isinstance(model_name, str) or not model_name.strip():
             raise ValueError("Model name cannot be empty.")
 
-        if not prompt:
+        if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("Prompt cannot be empty.")
 
-        if len(self._queue) >= self.max_queue_size:
+        if not isinstance(priority, int):
+            raise ValueError("Priority must be an integer.")
+
+        queued_count = sum(
+            request.status == RequestStatus.QUEUED
+            for request in self._requests.values()
+        )
+
+        running_count = sum(
+            request.status == RequestStatus.RUNNING
+            for request in self._requests.values()
+        )
+
+        if not self.queue_enabled and (queued_count or running_count):
+            raise RuntimeError(
+                "Request queueing is disabled and another request "
+                "is already active."
+            )
+
+        if queued_count >= self.max_queue_size:
             raise RuntimeError("Inference queue is full.")
 
-        if not self.queue_enabled and self._queue:
-            raise RuntimeError("Request queueing is disabled.")
-
-        request_id = next(self._sequence)
+        request_id = next(self._request_ids)
 
         request = InferenceRequest(
             request_id=request_id,
@@ -85,7 +105,7 @@ class InferenceScheduler:
         return request
 
     def next_request(self) -> InferenceRequest | None:
-        """Retrieve the next request for execution."""
+        """Retrieve the next queued request for execution."""
 
         while self._queue:
             _, _, request_id = heapq.heappop(self._queue)
@@ -102,6 +122,8 @@ class InferenceScheduler:
         return None
 
     def complete(self, request_id: int, result: Any = None) -> None:
+        """Mark a running request as completed."""
+
         request = self.get_request(request_id)
         self._require_running(request)
 
@@ -110,6 +132,8 @@ class InferenceScheduler:
         request.finished_at = time.time()
 
     def fail(self, request_id: int, error: str) -> None:
+        """Mark a running request as failed."""
+
         request = self.get_request(request_id)
         self._require_running(request)
 
@@ -118,24 +142,34 @@ class InferenceScheduler:
         request.finished_at = time.time()
 
     def cancel(self, request_id: int) -> None:
+        """Cancel a queued request."""
+
         request = self.get_request(request_id)
 
         if request.status != RequestStatus.QUEUED:
-            raise RuntimeError("Only queued requests can be cancelled.")
+            raise RuntimeError(
+                "Only queued requests can be cancelled."
+            )
 
         request.status = RequestStatus.CANCELLED
         request.finished_at = time.time()
 
     def get_request(self, request_id: int) -> InferenceRequest:
+        """Retrieve a request by its ID."""
+
         if request_id not in self._requests:
             raise KeyError(f"Unknown request: {request_id}")
 
         return self._requests[request_id]
 
     def list_requests(self) -> list[InferenceRequest]:
+        """Return all registered requests."""
+
         return list(self._requests.values())
 
     def get_status(self) -> dict:
+        """Return current scheduler statistics."""
+
         return {
             "enabled": self.enabled,
             "queued": sum(
@@ -162,6 +196,8 @@ class InferenceScheduler:
 
     @staticmethod
     def _require_running(request: InferenceRequest) -> None:
+        """Ensure a request is currently running."""
+
         if request.status != RequestStatus.RUNNING:
             raise RuntimeError(
                 f"Request {request.request_id} is not running."

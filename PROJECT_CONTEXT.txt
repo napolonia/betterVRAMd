@@ -1,442 +1,1428 @@
-betterVRAMd — PROJECT CONTEXT / HANDOVER
+=============================================================================== betterVRAMd PROJECT CONTEXT / ARCHITECTURAL HANDOVER
 
-Last updated: 2026-11-26
+Document : PROJECT_CONTEXT.txt Project : betterVRAMd Python Package : vramd Last Updated : 2026-11-27 Status : Active Development Document Role : Stable Architectural Reference
+
+===============================================================================
+
+DOCUMENT PURPOSE AND SCOPE
+
+This document defines the stable identity, objectives, environment, architecture, component responsibilities and established design decisions of betterVRAMd.
+
+It serves as the architectural reference for future development sessions.
+
+DOCUMENT RESPONSIBILITIES
+
+PROJECT_CONTEXT.txt Project identity, environment, architecture, design principles, component ownership and established architectural decisions.
+
+PROJECT_DEV.txt Implementation progress, completed work, pending tasks, development decisions, discovered problems, fixes and testing status.
+
+PROJECT_WORKFLOW.txt Development procedures, review practices, testing procedures, documentation maintenance and session handover instructions.
+
+IMPORTANT: PROJECT_CONTEXT.txt is not a development diary.
+
+ Temporary implementation details, unfinished tasks and testing
+ results belong in PROJECT_DEV.txt.
+
+DOCUMENTATION RULE
+
+Always distinguish between:
+
+ [01] Existing and implemented functionality.
+ [02] Existing but partially implemented functionality.
+ [03] Planned functionality.
+ [04] Tested and verified functionality.
 
 
-1. PROJECT OBJECTIVE
+The presence of a module or file does not prove that its functionality is implemented or working.
 
-Build betterVRAMd, a self-contained Linux/WSL2 VRAM manager that manages its own inference workloads.
+===============================================================================
 
-Core objective:
+PROJECT IDENTITY AND OBJECTIVES
 
-Keep model files/pages available in system RAM when practical.
-Keep model-owned VRAM allocations at zero when no model is resident.
-Allocate GPU resources when a model is loaded for inference.
-Keep loaded models available across multiple inference requests.
-Release GPU resources when models are unloaded or evicted.
-Verify actual GPU memory reclamation.
-Support CPU-only, hybrid CPU/GPU and full GPU inference.
-Support multiple registered GGUF models.
-Use separate inference worker processes.
-Prioritize reliability and resource safety over inference speed.
+Project Name : betterVRAMd Python Package : vramd Platform : Linux / WSL2 Model Format : GGUF Inference : llama.cpp Primary Backend: llama-server
 
-Model residency and inference activity are separate states.
-An idle inference queue does not necessarily mean the loaded model must be unloaded.
-Model unloading is controlled by the LifecycleController and resource-management policy.
+01.1 PROJECT OVERVIEW
 
-2. ENVIRONMENT
+betterVRAMd is a self-contained Linux/WSL2 VRAM and inference resource manager.
 
-Host:
+Its purpose is to manage its own inference workloads while coordinating system RAM, GPU memory, model caching and inference processes.
 
-Windows 10
-ASUS GL553VD
-NVIDIA GeForce GTX 1050
-4 GB dedicated VRAM
-16 GB physical system RAM
+The application is designed around resource safety, controlled model residency and predictable inference lifecycle management.
 
-WSL2:
+01.2 CORE OBJECTIVES
 
-Distribution reported as Linux 56.04
-WSL version 2
-Approximately 9.7 GiB available to Linux
-8 GB swap
+[01] MODEL MANAGEMENT
 
-CUDA:
+ - Register multiple GGUF models.
+ - Inspect model metadata without loading weights.
+ - Maintain read-only model memory mappings.
+ - Support associated multimodal projector files.
+ - Track model registration and lifecycle state.
 
-NVIDIA driver: 565.90
-NVIDIA-SMI: 565.51.01
-Reported CUDA version: 12.7
-CUDA build targeting sm_61
-User refers to CUDA toolkit as cu126
 
-Python:
+[02] RESOURCE MANAGEMENT
 
-Python 3.14.4
-Virtual environment: ~/projects/betterVRAMd/.venv
-Environment is already created and working.
-NEVER recreate the virtual environment unnecessarily.
-Accidental duplicate .venv-1 was identified and should be removed.
+ - Calculate safe RAM and VRAM budgets.
+ - Estimate model memory requirements.
+ - Select feasible CPU/GPU configurations.
+ - Allocate GPU resources when an inference model is loaded.
+ - Release model-owned GPU resources after unloading.
+ - Verify GPU memory reclamation where possible.
 
-Project directory:
 
-~/projects/betterVRAMd
+[03] INFERENCE MANAGEMENT
+
+ - Use a separate inference worker process.
+ - Maintain persistent model residency.
+ - Support multiple sequential inference requests.
+ - Support CPU-only inference.
+ - Support hybrid CPU/GPU inference.
+ - Support full GPU inference when resources permit.
+ - Permit only one resident inference model.
+ - Prevent concurrent inference workers.
+
+
+[04] SYSTEM STABILITY
+
+ - Prioritize resource safety over inference speed.
+ - Avoid unnecessary GPU workloads.
+ - Respect WSL2 memory limitations.
+ - Keep resource limits configurable.
+ - Avoid unnecessary model loading.
+ - Ensure predictable process and memory cleanup.
+
+
+===============================================================================
+
+RESOURCE CONCEPTS AND DEFINITIONS
+
+The following concepts must remain separate throughout the architecture.
+
+02.1 MODEL REGISTRATION
+
+Records model identity and metadata.
+
+Registration includes:
+
+ - Model name and identity.
+ - Model file path.
+ - File size.
+ - File format.
+ - Registration timestamp.
+
+
+Registration does not load model weights or allocate GPU memory.
+
+02.2 MODEL CACHING
+
+Provides read-only memory mappings of model files.
+
+Caching may optionally include page warming.
+
+Caching does not imply inference residency.
+
+02.3 MODEL RESIDENCY
+
+A model is resident when the inference backend has loaded it.
+
+Residency may involve:
+
+ - System RAM allocations.
+ - GPU VRAM allocations.
+ - Inference runtime allocations.
+ - KV cache allocations.
+ - Computation buffers.
+ - Auxiliary model components.
+
+02.4 INFERENCE ACTIVITY
+
+Inference activity means that the backend is actively processing an inference request.
+
+An idle inference queue does not automatically mean that the resident model must be unloaded.
+
+Model unloading is controlled by LifecycleController and the resource-management policy.
+
+02.5 MEMORY CONCEPTS
+
+The following memory concepts must not be treated as interchangeable:
+
+ [01] Filesystem page cache.
+ [02] Explicitly pinned RAM.
+ [03] Memory-mapped model files.
+ [04] Inference runtime allocations.
+ [05] GPU VRAM allocations.
+
+
+IMPORTANT: Memory mapping a model does not mean that its entire contents are physically resident in RAM.
+
+ mmap does not guarantee residency or protect model pages
+ from memory pressure.
+
+ Do not indiscriminately pin model pages using mlock.
+
+
+===============================================================================
+
+TARGET ENVIRONMENT
+03.1 HOST HARDWARE
+
+Operating System : Windows 10 Laptop : ASUS GL553VD GPU : NVIDIA GeForce GTX 1050 Dedicated VRAM : 4 GB Physical RAM : 16 GB
+
+03.2 WSL2 ENVIRONMENT
+
+Environment : WSL2 Distribution : Reported as Linux 56.04 WSL Version : 2 Available RAM : Approximately 9.7 GiB Swap : 8 GB
+
+03.3 CUDA ENVIRONMENT
+
+NVIDIA Driver : 565.90 NVIDIA-SMI : 565.51.01 Reported CUDA : 12.7 CUDA Target : sm_61 Toolkit Ref. : cu126
+
+03.4 PYTHON ENVIRONMENT
+
+Python Version : 3.14.4
+
+Project Path:
+
+ ~/projects/betterVRAMd
+
+
+Virtual Environment:
+
+ ~/projects/betterVRAMd/.venv
+
 
 Activation:
 
-cd ~/projects/betterVRAMd source .venv/bin/activate
+ cd ~/projects/betterVRAMd
+ source .venv/bin/activate
 
-3. LLAMA.CPP
 
-Custom CUDA build is working.
+IMPORTANT: The existing virtual environment is working.
 
-Build:
+ Do not recreate it unnecessarily.
 
-Commit/build identifier: b1-41c7a1b
-Executable: ~/llama.cpp/build-cuda/bin/llama-cli
+ An accidental duplicate environment named .venv-1 was previously
+ identified. It should not be recreated or retained unnecessarily.
 
-Model previously tested:
+03.5 DEVELOPMENT ENVIRONMENT
 
-~/models-tmp/Qwen3.5-4B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf
+Chrome must remain available during development because it is used to communicate with ChatGPT.
 
-Successful inference command:
+The target machine is sensitive to combined memory pressure from:
 
-~/llama.cpp/build-cuda/bin/llama-cli
--m ~/models-tmp/Qwen3.5-4B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf
--ngl 10
--c 2048
--n 512
--p "Say hello in one sentence."
+ - Chrome.
+ - VS Code.
+ - WSL2.
+ - Inference workloads.
 
-llama.cpp CUDA inference works, but additional inference testing has caused Windows freezes.
 
-IMPORTANT: Do not run inference tests during current development. Build the application first, then conduct integrated tests carefully.
+Development procedures must prioritize system stability.
 
-4. RESOURCE SAFETY
+IMPORTANT: Avoid unnecessary memory-intensive workloads.
 
-The machine freezes when inference runs alongside Chrome, VS Code and WSL2.
+===============================================================================
 
-Chrome must remain available because it is being used to communicate with ChatGPT.
+LLAMA.CPP ENVIRONMENT
+04.1 PRIMARY INFERENCE ENGINE
 
-Development strategy:
+Inference Engine : llama.cpp Primary Backend : llama-server Build Identifier : b1-41c7a1b
 
-Build the complete Phase 1 system before integrated inference testing.
-Avoid unnecessary GPU workloads.
-Do not indiscriminately pin model pages using mlock.
-Do not introduce concurrent inference workers.
-Keep resource limits configurable.
-Prioritize CPU and RAM safety as well as VRAM safety.
+Executable:
 
-Initial GPU configuration:
+ ~/llama.cpp/build-cuda/bin/llama-cli
 
-Total VRAM: 4096 MiB
-Initial VRAMd budget: 1800 MiB
-Minimum desired free VRAM: 512 MiB
-Automatic budgeting enabled
-Maximum inference workers: 1
 
-These are conservative initial limits, not guaranteed allocation amounts.
+The custom CUDA-enabled llama.cpp installation is the authoritative source for:
 
-RAM:
+ - Inference executables.
+ - Python GGUF tooling.
+ - Associated GGUF utilities.
 
-Maximum configured application budget: 4096 MiB
-System reserve: 2048 MiB
-Memory locking disabled
-Default cache strategy: mmap
+04.2 PREVIOUSLY TESTED MODEL
 
-Important distinction:
+Model:
 
-Filesystem page cache
-Explicitly pinned RAM
-Memory-mapped model files
-VRAM allocations
+ ~/models-tmp/Qwen3.5-4B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf
 
-These are separate concepts and must remain separate in the architecture.
 
-5. ARCHITECTURE
+Associated Multimodal Projector:
 
-Client:
+ ~/models-tmp/mmproj-Qwen3.5-4B-Uncensored-HauhauCS-Aggressive-BF16.gguf
 
-CLI
-Future API
-Future prompt interface
 
-Core:
+The mmproj file is an auxiliary component of its associated model.
 
-Central manager
-Configuration
-Passive monitoring
-Resource budget calculator
-Model registry
-RAM cache manager
-Loading scheduler
-Lifecycle controller
-Inference queue
+It is not an independent inference model.
 
-Worker:
+04.3 PREVIOUS INFERENCE VERIFICATION
 
-Separate inference process
-llama.cpp integration
-CUDA execution
+CUDA inference was previously verified using llama-cli.
 
-GPU:
+Example command:
 
-NVML
-CUDA
-NVIDIA driver interface
+ ~/llama.cpp/build-cuda/bin/llama-cli \
+ -m ~/models-tmp/Qwen3.5-4B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf \
+ -ngl 10 \
+ -c 2048 \
+ -n 512 \
+ -p "Say hello in one sentence."
 
-Architectural rule:
 
-OBSERVE → DECIDE → EXECUTE
+This establishes that CUDA inference was previously functional.
+
+It does not establish that the current betterVRAMd application has completed integrated inference testing.
+
+04.4 DEVELOPMENT RESTRICTION
+
+DO NOT RUN INFERENCE TESTS DURING CURRENT DEVELOPMENT.
+
+Previous inference testing has caused Windows system freezes.
+
+The application should be built and reviewed before integrated inference testing is attempted.
+
+Development must:
+
+ - Avoid unnecessary GPU workloads.
+ - Avoid unnecessary inference execution.
+ - Prioritize system stability.
+ - Preserve the working development environment.
+
+
+Integrated testing must be conducted carefully when development reaches the appropriate stage.
+
+===============================================================================
+
+RESOURCE SAFETY AND INITIAL CONFIGURATION
+05.1 HARDWARE CONSTRAINTS
+
+The initial target machine has:
+
+ - 4 GB dedicated VRAM.
+ - 16 GB physical system RAM.
+ - Approximately 9.7 GiB available to WSL2.
+ - Limited tolerance for concurrent memory-intensive workloads.
+
+
+Resource calculations must account for the difference between physical host memory and memory available to WSL2.
+
+05.2 INITIAL GPU CONFIGURATION
+
+Total VRAM : 4096 MiB Initial VRAMd Budget : 1800 MiB Minimum Free VRAM : 512 MiB Automatic Budgeting : Enabled Maximum Inference Workers: 1
+
+These values are conservative initial limits.
+
+They are not guaranteed allocation amounts.
+
+05.3 INITIAL RAM CONFIGURATION
+
+Maximum Application Budget : 4096 MiB System Memory Reserve : 2048 MiB Memory Locking : Disabled Default Cache Strategy : mmap
+
+These values are configurable.
+
+05.4 RESOURCE SAFETY PRIORITIES
+
+Development must:
+
+ [01] Avoid unnecessary GPU workloads.
+ [02] Avoid concurrent inference workers.
+ [03] Keep resource limits configurable.
+ [04] Respect WSL2 memory availability.
+ [05] Preserve sufficient memory for other applications.
+ [06] Avoid aggressive page locking.
+ [07] Avoid unnecessary model loading.
+ [08] Prefer predictable cleanup over performance optimizations.
+
+05.5 SINGLE-MODEL REQUIREMENT
+
+Only one inference model may be loaded by the inference worker at any given time.
+
+Multiple models may be registered.
+
+However:
+
+ - Only one inference server may be active.
+ - Only one inference model may be resident in that server.
+ - Switching models requires unloading the previous model.
+ - A new model must not load while another remains resident.
+ - Concurrent inference workers are prohibited.
+ - An associated mmproj does not count as another model.
+
+
+This restriction must be enforced at the manager/lifecycle coordination level.
+
+It must not rely solely on assumptions made by the inference backend.
+
+===============================================================================
+
+ARCHITECTURAL OPERATING PRINCIPLES
+06.1 OBSERVE -> DECIDE -> EXECUTE
+
+OBSERVE
+
+ Collect passive system and GPU resource measurements.
+
+
+DECIDE
+
+ Calculate resource budgets, estimate model requirements
+ and select an appropriate inference configuration.
+
+
+EXECUTE
+
+ Load, unload and execute inference through the controlled
+ inference worker.
+
+
+RULE: Monitoring components must never make resource-allocation or model-lifecycle decisions.
+
+06.2 RESOURCE MANAGEMENT BEFORE LOADING
+
+Model loading must be preceded by resource evaluation.
+
+The general sequence is:
+
+ [01] Observe current system and GPU resources.
+ [02] Calculate safe resource budgets.
+ [03] Inspect model metadata.
+ [04] Estimate model memory requirements.
+ [05] Select a feasible inference configuration.
+ [06] Check current model residency.
+ [07] Unload an existing model when switching.
+ [08] Start the inference worker.
+ [09] Verify server readiness.
+ [10] Confirm model residency where possible.
+
+
+Estimates are not guarantees of successful allocation.
+
+06.3 SINGLE ACTIVE MODEL
+
+Only one inference model may be resident at a time.
+
+The application must prevent overlapping model-loading operations.
+
+Model switching requires controlled unloading before loading the replacement model.
+
+06.4 SEPARATION OF RESPONSIBILITIES
+
+Each component must have a clearly defined responsibility.
+
+Components must not silently assume responsibilities belonging to other components.
+
+Dependency ownership and process ownership must remain explicit.
+
+===============================================================================
+
+SYSTEM ARCHITECTURE
+
+The application is divided into five main architectural areas.
+
+07.1 CLIENT LAYER
 
 Responsibilities:
 
-INFERENCE BACKEND ARCHITECTURE
+ - CLI.
+ - Future API.
+ - Future prompt interface.
 
-Primary backend: llama.cpp using llama-server.
 
-llama-server provides persistent model residency and
-HTTP-based inference.
+Provides user-facing access to application functionality.
+
+07.2 CORE LAYER
+
+Responsibilities:
+
+ - Central manager.
+ - Configuration.
+ - Passive resource monitoring coordination.
+ - Resource budget calculation.
+ - Model registry.
+ - RAM cache management.
+ - Model metadata inspection.
+ - Memory estimation.
+ - GPU-layer selection.
+ - Loading scheduling.
+ - Lifecycle coordination.
+ - Inference queue management.
+
+
+The core coordinates application behaviour and resource-management decisions.
+
+07.3 MODEL LAYER
+
+Responsibilities:
+
+ - Model registration.
+ - GGUF metadata inspection.
+ - Model memory estimation.
+ - GPU-layer selection.
+ - Read-only model file mapping.
+ - Cache tracking.
+
+
+Model registration must never load model weights.
+
+07.4 WORKER LAYER
+
+Responsibilities:
+
+ - Separate inference process.
+ - llama-server subprocess management.
+ - Backend integration.
+ - Inference execution.
+ - Process startup and shutdown.
+ - Runtime process tracking.
+
+07.5 GPU AND MONITORING LAYER
+
+Responsibilities:
+
+ - NVML integration.
+ - CUDA integration where required.
+ - NVIDIA driver interface.
+ - System monitoring.
+ - GPU monitoring.
+
+
+Monitoring is passive and read-only.
+
+===============================================================================
+
+PROJECT STRUCTURE
+
+The following represents the established project structure.
+
+It must be reconciled with the actual local repository when structural changes are made.
+
+betterVRAMd/ | +-- PROJECT_CONTEXT.txt +-- PROJECT_DEV.txt +-- PROJECT_WORKFLOW.txt | +-- config/ | +-- default.toml | +-- gpu_probe.py | +-- scripts/ | +-- update_dev.py | +-- tests/ | +-- init.py | +-- vramd/ | +-- init.py | +-- cli/ | +-- init.py | +-- commands.py | +-- core/ | +-- init.py | +-- budget.py | +-- config.py | +-- lifecycle.py | +-- manager.py | +-- scheduler.py | +-- inference/ | +-- init.py | +-- base.py | +-- llama_cli.py | +-- llama_cpp.py | +-- main.py | +-- models/ | +-- init.py | +-- cache.py | +-- estimator.py | +-- metadata.py | +-- registry.py | +-- selector.py | +-- monitor/ | +-- init.py | +-- gpu.py | +-- system.py | +-- worker/ +-- init.py +-- process.py
+
+IMPORTANT: Some files may be empty placeholders.
+
+ File existence does not imply implementation completion.
+
+ Implementation and testing status belongs in PROJECT_DEV.txt.
+
+ Future modules must not be presented as existing files until
+ they have actually been created.
+
+ Update this tree whenever files are created, removed or
+ reorganized.
+
+
+===============================================================================
+
+RESOURCE MANAGEMENT COMPONENTS
+09.1 RESOURCE BUDGET CALCULATOR
+
+Module:
+
+ vramd/core/budget.py
+
+
+Responsibility:
+
+ Calculate safe resource limits using current system and
+ GPU measurements.
+
+
+RAM budgeting considers:
+
+ - Available system RAM.
+ - Configured maximum RAM.
+ - Configured system memory reserve.
+
+
+GPU budgeting considers:
+
+ - Total VRAM.
+ - Used VRAM.
+ - Available VRAM.
+ - Configured maximum VRAM.
+ - Minimum desired free VRAM.
+
+
+Output:
+
+ ResourceBudget containing safe allocatable RAM and VRAM limits.
+
+
+Restrictions:
+
+ - Does not allocate memory.
+ - Does not load models.
+ - Does not make lifecycle decisions.
+
+09.2 MODEL METADATA INSPECTOR
+
+Module:
+
+ vramd/models/metadata.py
+
+
+Responsibility:
+
+ Perform read-only GGUF metadata inspection.
+
+
+Requirements:
+
+ - Use Python GGUF tooling bundled with the configured
+   custom llama.cpp installation.
+ - Do not load model weights.
+ - Do not allocate GPU memory.
+ - Provide model architecture information.
+ - Provide layer counts.
+ - Provide tensor descriptions and storage sizes where available.
+
+
+The configured llama.cpp installation is authoritative for GGUF tooling.
+
+09.3 MODEL MEMORY ESTIMATOR
+
+Module:
+
+ vramd/models/estimator.py
+
+
+Responsibility:
+
+ Estimate model memory requirements without allocating resources.
+
+
+Current design:
+
+ - Estimate CPU-only configurations.
+ - Estimate GPU-only configurations.
+ - Estimate hybrid configurations.
+ - Use GGUF tensor metadata and tensor sizes.
+ - Account for transformer blocks.
+ - Account for output-layer tensors.
+ - Apply a 15% safety margin.
+ - Compare estimated requirements against ResourceBudget.
+
+
+Restrictions:
+
+ - Does not load models.
+ - Does not allocate RAM or VRAM.
+ - Does not authorize model loading by itself.
+
+
+Known limitations and future improvements:
+
+ [01] Include KV cache requirements based on context size.
+
+ [02] Account for computation buffers.
+
+ [03] Account for inference runtime overhead.
+
+ [04] Include multimodal projector memory where applicable.
+
+ [05] Verify GPU-layer tensor placement assumptions against
+      supported llama.cpp architectures.
+
+ [06] Distinguish estimated feasibility from guaranteed
+      successful model loading.
+
+
+IMPORTANT: A memory estimate alone must never authorize model loading or GPU allocation.
+
+09.4 MODEL LAYER SELECTOR
+
+Module:
+
+ vramd/models/selector.py
+
+
+Responsibility:
+
+ Select the highest feasible llama.cpp GPU-layer configuration
+ for one model.
+
+
+Design requirements:
+
+ - Evaluate CPU-only feasibility.
+ - Search GPU-layer configurations from highest to lowest.
+ - Respect max_gpu_layers.
+ - Do not assume feasibility is monotonic.
+ - Fall back to CPU-only when GPU configurations are infeasible.
+ - Raise NoFeasibleConfigurationError when CPU-only operation
+   also exceeds the safe RAM budget.
+
+
+Known improvements:
+
+ [01] Validate transformer block metadata explicitly.
+
+ [02] Handle incomplete GPU tensor metadata gracefully.
+
+ [03] Permit CPU-only fallback when GPU estimation fails
+      because of incomplete metadata, provided CPU estimation
+      is feasible.
+
+ [04] Catch only expected metadata-related estimation errors.
+
+ [05] Do not hide arbitrary programming errors.
+
+
+Restrictions:
+
+ - Does not load models.
+ - Does not manage worker processes.
+ - Does not allocate GPU memory.
+
+09.5 MODEL REGISTRY
+
+Module:
+
+ vramd/models/registry.py
+
+
+Responsibility:
+
+ Maintain model identity and registration metadata.
+
+
+Tracks:
+
+ - Model name.
+ - Model path.
+ - File size.
+ - Format.
+ - Registration timestamp.
+
+
+Restrictions:
+
+ - Does not load model weights.
+ - Does not allocate memory.
+ - Does not start inference workers.
+ - Does not make resource-allocation decisions.
+
+
+Multiple GGUF models may be registered simultaneously.
+
+09.6 RAM CACHE MANAGER
+
+Module:
+
+ vramd/models/cache.py
+
+
+Responsibility:
+
+ Manage read-only model file mappings and cache resources.
+
+
+Responsibilities:
+
+ - Create read-only mmap mappings.
+ - Track active mappings.
+ - Support optional page warming.
+ - Clean up mappings.
+
+
+Restrictions:
+
+ - Does not allocate VRAM.
+ - Does not load inference models.
+ - Does not pin all model pages indiscriminately.
+ - Does not start inference processes.
+
+
+mmap is the default cache strategy.
+
+Memory locking remains disabled by default.
+
+09.7 MULTIMODAL MODEL SUPPORT
+
+An mmproj file is an auxiliary component of its associated inference model.
+
+Requirements:
+
+ - Must not be treated as an independent inference model.
+ - Must be passed to llama.cpp when required.
+ - Its memory requirements must eventually be included
+   in model resource estimation.
+ - Must be unloaded together with its associated model.
+
+09.8 MODEL LOADING DECISIONS
+
+Loading decisions must account for:
+
+ - Current RAM budget.
+ - Current VRAM budget.
+ - Model metadata.
+ - Estimated model memory.
+ - GPU-layer configuration.
+ - Context size.
+ - Runtime overhead.
+ - Auxiliary model components.
+
+
+The application must not load a new inference model while another model remains resident.
+
+09.9 MODEL UNLOADING
+
+Unloading must:
+
+ - Stop the associated inference worker/server.
+ - Release model-owned runtime resources.
+ - Release associated auxiliary resources.
+ - Clean up managed model mappings when appropriate.
+ - Verify GPU memory reclamation where possible.
+ - Report cleanup failures.
+
+
+Successful process termination and successful GPU memory reclamation are separate verification conditions.
+
+===============================================================================
+
+INFERENCE ARCHITECTURE
+10.1 PRIMARY BACKEND
+
+Primary Backend : llama-server Inference Engine: llama.cpp
+
+llama-server provides:
+
+ - Persistent model residency.
+ - HTTP-based inference.
+ - Multiple sequential inference requests without reloading
+   model weights.
+ - Health and readiness endpoints.
+
 
 The server remains running while its model is resident.
-Multiple inference requests use the same loaded model
-without reloading weights.
 
-Backend responsibilities:
+10.2 BACKEND-INDEPENDENT INTERFACE
 
-base.py:
-Defines the backend-independent inference interface.
-Defines common result types and exception classes.
-Does not contain llama.cpp-specific implementation.
+Module:
 
-llama_cpp.py:
-Implements the primary llama-server backend.
-Validates the configured executable and model path.
-Builds the llama-server command.
-Provides HTTP readiness and inference interfaces.
-Does not create or terminate the server process.
+ vramd/inference/base.py
 
-llama_cli.py:
-Future optional backend.
-Not part of the initial implementation.
-
-PROCESS OWNERSHIP
-
-worker/process.py owns the llama-server subprocess lifecycle.
 
 Responsibilities:
-- Process creation.
-- Process tracking.
-- Startup readiness monitoring.
-- Graceful shutdown.
-- Forced termination when configured.
-- Runtime port tracking.
-- Failed-start cleanup.
 
-worker/__init__.py:
-Package initializer. Currently empty.
+ - Define the backend-independent inference interface.
+ - Define common inference result types.
+ - Define common inference exception classes.
+
+
+Restrictions:
+
+ - No llama.cpp-specific implementation.
+ - No subprocess creation.
+ - No subprocess termination.
+
+10.3 LLAMA.CPP BACKEND
+
+Module:
+
+ vramd/inference/llama_cpp.py
+
+
+Responsibilities:
+
+ - Implement the primary llama-server backend.
+ - Validate the configured executable.
+ - Validate model paths.
+ - Build llama-server commands.
+ - Support optional mmproj arguments.
+ - Provide HTTP readiness checks.
+ - Provide HTTP inference requests.
+ - Handle response parsing.
+ - Handle backend communication errors.
+
+
+The backend communicates with the running server.
+
+It does not create or terminate the server process.
+
+10.4 LLAMA-CLI BACKEND
+
+Module:
+
+ vramd/inference/llama_cli.py
+
+
+Status:
+
+ Future optional backend.
+
+
+Not required for the initial implementation unless a specific requirement justifies its inclusion.
+
+llama-server remains the primary inference approach.
+
+10.5 WORKER PROCESS
+
+Module:
+
+ vramd/worker/process.py
+
+
+Responsibility:
+
+ Own the llama-server subprocess lifecycle.
+
+
+Responsibilities:
+
+ - Process creation.
+ - Process tracking.
+ - Startup readiness monitoring.
+ - Graceful shutdown.
+ - Forced termination when configured.
+ - Runtime port tracking.
+ - Failed-start cleanup.
+
 
 The worker owns the llama-server child process.
 
-The inference backend communicates with the running server
-but does not own its process lifecycle.
+10.6 PROCESS AND MODEL LIFECYCLE
 
-LifecycleController coordinates model loading and unloading.
+LifecycleController Coordinates model lifecycle decisions.
 
-Server termination must release its GPU allocations.
+WorkerProcess Creates and terminates the inference server process.
 
-Only one inference worker/server may be active at a time.
+LlamaCppBackend Communicates with the running server.
 
-RESOURCE OWNERSHIP
+Server termination must release its associated GPU allocations.
 
-MONITORS:
-Read-only system and GPU measurements.
-Never allocate memory or load models.
-Never make resource-management decisions.
+Only one inference worker/server may be active at any time.
 
-CORE:
-Resource budgeting.
-Scheduling.
-Allocation decisions.
-Lifecycle coordination.
+Only one inference model may be resident at any time.
 
-MODEL CACHE:
-Memory mapping.
-Optional page warming.
-Cache tracking.
-No indiscriminate memory locking.
+===============================================================================
 
-WORKER:
-Owns the inference server subprocess.
-Executes inference through the backend.
-Remains active while the model is resident.
-Terminates when the model is unloaded or evicted.
+CONFIGURATION AND APPLICATION OPERATION
+11.1 MAIN CONFIGURATION
 
-REGISTRY:
-Tracks model identity, location and metadata.
-Never loads model weights.
+File:
 
-MANAGER:
-Coordinates component startup and shutdown.
-Owns component lifecycle.
-Exposes application status.
+ config/default.toml
 
 
+Configuration sections:
 
-6. EXISTING PROJECT STRUCTURE
+ - application
+ - paths
+ - gpu
+ - memory
+ - inference
+ - worker
+ - scheduler
+ - registry
+ - api
+ - logging
 
-betterVRAMd/
-├── PROJECT_CONTEXT.txt
-├── PROJECT_DEV.txt
-├── PROJECT_WORKFLOW.txt
-├── config/
-│   └── default.toml
-├── scripts/
-│   └── update_dev.py
-├── tests/
-└── vramd/
-    ├── cli/
-    │   ├── __init__.py
-    │   └── commands.py
-    ├── core/
-    │   ├── budget.py
-    │   ├── config.py
-    │   ├── lifecycle.py
-    │   ├── manager.py
-    │   └── scheduler.py
-    inference/
-        ├── __init__.py
-        ├── base.py
-        ├── llama_cpp.py
-        └── llama_cli.py (future)
-    ├── models/
-    │   ├── cache.py
-    │   ├── estimator.py
-    │   ├── metadata.py
-    │   └── registry.py
-    ├── monitor/
-    │   ├── gpu.py
-    │   └── system.py
-    ├── worker/
-    │   ├── __init__.py
-    │   └── process.py
-    └── main.py
-Note: Some files were created as empty placeholders. Do not assume they are implemented.
+11.2 INITIAL CONFIGURATION VALUES
 
-7. IMPLEMENTATION STATUS
+app_name : betterVRAMd max_vram_mb : 1800 minimum_free_vram_mb : 512 max_ram_mb : 4096 reserve_mb : 2048 warm_cache_enabled : true allow_memory_locking : false cache_strategy : mmap max_workers : 1 default_mode : hybrid default_gpu_layers : 10 context_size : 2048
 
-see PROJECT_DEV.txt
-Implementation status does not imply testing or validation.
+These are initial configurable defaults.
 
-8. CONFIGURATION
+They are not universal hardware requirements.
 
-Main file:
+11.3 SERVER CONFIGURATION
 
-config/default.toml
-
-Sections:
-
-application
-paths
-gpu
-memory
-inference
-worker
-scheduler
-registry
-api
-logging
-
-Important current values:
-
-app_name = "betterVRAMd"
-max_vram_mb = 1800
-minimum_free_vram_mb = 512
-max_ram_mb = 4096
-reserve_mb = 2048
-warm_cache_enabled = true
-allow_memory_locking = false
-cache_strategy = "mmap"
-max_workers = 1
-default_mode = "hybrid"
-default_gpu_layers = 10
-context_size = 2048
-
-Keep the project name as betterVRAMd. Python package remains vramd.
-
-We'll maintain two separate files:
-
-- `PROJECT_CONTEXT.txt` — Stable project identity, environment, architecture, design principles and overall objectives.
-- `PROJECT_DEV.txt` — Live development log: implementation status, completed modules, changes, decisions, errors and next actions.
-
-This avoids rewriting the entire project context every time we make progress.
-
-### Agreed workflow
-
-1. Implement a module.
-2. Confirm its implementation status.
-3. Update `PROJECT_DEV.txt`.
-4. Keep `PROJECT_CONTEXT.txt` mostly unchanged unless architecture or environment changes.
-
-
-LLAMA-SERVER CONFIGURATION
-
-Server configuration is defined in VRAMdConfig and
-config/default.toml.
+Server configuration is defined in VRAMDConfig and config/default.toml.
 
 Settings include:
-- Host and port.
-- Dynamic port selection.
-- Startup timeout.
-- Request timeout.
-- Health-check interval.
-- Maximum parallel requests.
-- Optional API key file.
+
+ - Server host.
+ - Server port.
+ - Dynamic port selection.
+ - Startup timeout.
+ - Request timeout.
+ - Health-check interval.
+ - Maximum parallel requests.
+ - Optional API key file.
+
 
 Worker configuration includes:
-- Separate process usage.
-- Shutdown timeout.
-- Forced termination policy.
-- Restart-on-crash policy.
 
-Environment variables with the VRAMD_ prefix override
-TOML configuration.
+ - Separate process usage.
+ - Shutdown timeout.
+ - Forced termination policy.
+ - Restart-on-crash policy.
 
-The worker owns process creation and termination.
-The backend owns HTTP communication.
-LifecycleController owns model lifecycle decisions.
+11.4 ENVIRONMENT VARIABLES
+
+Environment variables using the VRAMD_ prefix override TOML configuration.
+
+11.5 APPLICATION STARTUP
+
+Application startup must not automatically:
+
+ - Load models.
+ - Warm model pages.
+ - Allocate GPU resources.
+ - Start unnecessary inference workers.
 
 
-9. Component Ownership and Integration
-VRAMdManager
+Model registration must not trigger model loading.
 
-VRAMdManager is the central owner and coordinator of:
+Page warming, when explicitly requested and enabled, is controlled by cache policy.
 
-ModelRegistry
-RAMCacheManager
-LifecycleController
-InferenceScheduler
-SystemMonitor
-GPUMonitor (when GPU monitoring is enabled)
-ResourceBudgetCalculator
-Dependency injection
+11.6 APPLICATION SHUTDOWN
+
+Application shutdown must:
+
+ - Stop active inference workers.
+ - Release active model mappings.
+ - Clear managed cache resources.
+ - Stop managed components.
+ - Report cleanup failures.
+
+
+Resource ownership must remain explicit throughout shutdown.
+
+===============================================================================
+
+COMPONENT OWNERSHIP AND INTEGRATION
+12.1 VRAMD MANAGER
+
+Module:
+
+ vramd/core/manager.py
+
+
+VRAMdManager is the central application coordinator.
+
+It owns:
+
+ - ModelRegistry.
+ - RAMCacheManager.
+ - ModelMetadataInspector.
+ - ModelMemoryEstimator.
+ - ModelLayerSelector.
+ - LifecycleController.
+ - InferenceScheduler.
+ - SystemMonitor.
+ - GPUMonitor, when GPU monitoring is enabled.
+ - ResourceBudgetCalculator.
+
+
+Responsibilities:
+
+ - Component construction.
+ - Dependency injection.
+ - Application startup and shutdown.
+ - Resource-management coordination.
+ - Application status reporting.
+ - Coordination between model lifecycle and inference scheduling.
+
+
 VRAMdManager creates and owns ModelRegistry and RAMCacheManager.
-VRAMdManager passes references to both into LifecycleController.
-InferenceScheduler is owned directly by VRAMdManager.
-LifecycleController does not own or recreate its dependencies.
-Startup and shutdown
-Application startup must not automatically load models.
-Application startup must not warm model pages.
-Application startup must not allocate GPU resources.
-Shutdown must release all active RAM cache mappings.
-Model registration only records metadata.
-Current implementation status
-ModelRegistry: implemented, not yet integration-tested.
-RAMCacheManager: implemented, not yet integration-tested.
-LifecycleController: initial implementation, not yet reviewed or tested.
-InferenceScheduler: initial implementation, not yet reviewed or tested.
-VRAMdManager integration: initial implementation, not yet tested.
 
-ModelMetadataInspector:
+It passes references to both into LifecycleController.
+
+LifecycleController must not recreate these dependencies.
+
+12.2 LIFECYCLE CONTROLLER
+
+Module:
+
+ vramd/core/lifecycle.py
+
+
+Receives:
+
+ - ModelRegistry.
+ - RAMCacheManager.
+ - ModelMetadataInspector.
+ - ModelLayerSelector.
+ - VRAMDConfig.
+
+
+Responsibilities:
+
+ - Model registration and unregistration.
+ - Metadata inspection.
+ - Configuration selection.
+ - Cache loading and unloading.
+ - Model state reporting.
+ - Cache cleanup.
+
+
+It coordinates model lifecycle decisions.
+
+It does not directly create inference subprocesses.
+
+12.3 MODEL REGISTRY
+
+Module:
+
+ vramd/models/registry.py
+
+
+Owns model identity and registration metadata.
+
+Does not:
+
+ - Load model weights.
+ - Allocate memory.
+ - Start inference workers.
+ - Make resource-allocation decisions.
+
+12.4 RAM CACHE MANAGER
+
+Module:
+
+ vramd/models/cache.py
+
+
+Owns read-only memory mappings and cache tracking.
+
+Does not:
+
+ - Allocate VRAM.
+ - Load inference models.
+ - Start inference processes.
+ - Make model-loading decisions.
+
+12.5 MODEL METADATA INSPECTOR
+
+Module:
+
+ vramd/models/metadata.py
+
+
 Owned by VRAMdManager.
-Uses the Python GGUF tooling bundled with the custom llama.cpp build.
+
+Uses Python GGUF tooling bundled with the configured custom llama.cpp build.
+
 Performs read-only metadata inspection.
 
-ModelMemoryEstimator:
+Must not load model weights into RAM or VRAM.
+
+12.6 MODEL MEMORY ESTIMATOR
+
+Module:
+
+ vramd/models/estimator.py
+
+
 Owned by VRAMdManager.
-Compares preliminary model memory estimates against ResourceBudget.
+
+Estimates model memory requirements and compares them against ResourceBudget.
+
 Does not allocate resources.
 
-LifecycleController:
-Receives ModelRegistry, RAMCacheManager and
-ModelMetadataInspector through dependency injection.
+12.7 MODEL LAYER SELECTOR
 
-Model Metadata and Memory Estimation
-GGUF metadata inspection uses the Python tooling bundled with the configured custom llama.cpp build.
-The configured llama.cpp installation is the authoritative source for GGUF tooling.
-Metadata inspection must not load model weights into RAM or VRAM.
-Tensor descriptions and storage sizes are used for preliminary memory estimates.
-ModelMemoryEstimator compares estimated requirements against ResourceBudget.
-CPU, hybrid and GPU execution modes are considered.
-GPU-layer estimates are preliminary and proportional estimates are not guaranteed to match actual llama.cpp tensor placement.
-KV cache, context buffers and backend runtime overhead must be accounted for before production loading decisions.
-No memory estimate alone authorizes model loading or GPU allocation.
+Module:
+
+ vramd/models/selector.py
+
+
+Owned by VRAMdManager.
+
+Selects the highest feasible GPU-layer configuration.
+
+Operates on one model at a time.
+
+Does not load models or manage inference processes.
+
+12.8 RESOURCE BUDGET CALCULATOR
+
+Module:
+
+ vramd/core/budget.py
+
+
+Owned by VRAMdManager.
+
+Calculates safe resource limits using passive system and GPU measurements.
+
+Does not allocate resources or make model lifecycle decisions.
+
+12.9 MONITORS
+
+Modules:
+
+ vramd/monitor/system.py
+ vramd/monitor/gpu.py
+
+
+SystemMonitor and GPUMonitor provide read-only measurements.
+
+They must never:
+
+ - Allocate memory.
+ - Load or unload models.
+ - Start or stop workers.
+ - Make resource-management decisions.
+
+12.10 INFERENCE SCHEDULER
+
+Module:
+
+ vramd/core/scheduler.py
+
+
+Owned directly by VRAMdManager.
+
+Responsible for:
+
+ - Inference scheduling.
+ - Queue coordination.
+ - Request coordination.
+
+
+Must respect the single-active-model and single-worker architectural constraints.
+
+Scheduling must not independently bypass LifecycleController model-loading decisions.
+
+12.11 WORKER PROCESS
+
+Module:
+
+ vramd/worker/process.py
+
+
+Owns the inference subprocess.
+
+Responsible for:
+
+ - Process creation.
+ - Readiness.
+ - Tracking.
+ - Termination.
+ - Failed-start cleanup.
+
+
+Does not own model registration, resource budgeting or model configuration selection.
+
+12.12 INFERENCE BACKEND
+
+Module:
+
+ vramd/inference/llama_cpp.py
+
+
+LlamaCppBackend provides inference communication with the active server.
+
+It does not create or terminate the server subprocess.
+
+12.13 OWNERSHIP SUMMARY
+
+VRAMdManager Owns application-level components and coordinates them.
+
+LifecycleController Coordinates model lifecycle using injected dependencies.
+
+WorkerProcess Owns the inference subprocess.
+
+LlamaCppBackend Owns HTTP communication with the running server.
+
+ModelRegistry Owns model registration metadata.
+
+RAMCacheManager Owns memory mappings and cache resources.
+
+ModelMetadataInspector Inspects GGUF metadata without loading weights.
+
+ResourceBudgetCalculator Calculates safe resource limits.
+
+ModelMemoryEstimator Estimates model resource requirements.
+
+ModelLayerSelector Selects feasible inference configurations.
+
+SystemMonitor / GPUMonitor Provide passive measurements only.
+
+InferenceScheduler Coordinates inference requests and queue execution.
+
+===============================================================================
+
+ERROR HANDLING AND RESOURCE CLEANUP
+
+Error handling must preserve application state and resource ownership.
+
+13.1 STARTUP FAILURES
+
+Startup failures must trigger cleanup of components that have already started.
+
+Failed worker startup must attempt subprocess cleanup.
+
+Process references must not be discarded when cleanup fails.
+
+13.2 MEMORY CLEANUP
+
+Failed memory mapping cleanup must be reported.
+
+Resource cleanup failures must remain visible to the manager.
+
+The application must distinguish successful cleanup from cleanup that was attempted but could not be verified.
+
+13.3 INFERENCE ERRORS
+
+The following error categories must remain distinguishable:
+
+ [01] Resource estimation errors.
+ [02] Model configuration errors.
+ [03] Worker startup failures.
+ [04] Backend unavailability.
+ [05] Inference request failures.
+ [06] Inference timeouts.
+ [07] Worker termination failures.
+ [08] GPU memory reclamation failures.
+
+13.4 PROCESS TERMINATION
+
+Shutdown should attempt graceful termination first.
+
+Forced termination may be used according to worker policy.
+
+Forced termination must be logged.
+
+Shutdown failures must not silently discard process references.
+
+13.5 GPU MEMORY RECLAMATION
+
+Worker termination does not automatically prove that GPU memory has been reclaimed.
+
+GPU memory measurements should be used to verify reclamation where possible.
+
+Verification must account for unrelated GPU usage and measurement limitations.
+
+13.6 LOGGING
+
+Logging must provide sufficient information to diagnose:
+
+ - Resource-management decisions.
+ - Model lifecycle transitions.
+ - Worker process state.
+ - Inference errors.
+ - Memory cleanup failures.
+ - GPU memory reclamation.
+
+
+Sensitive configuration values and API keys must not be unnecessarily exposed.
+
+===============================================================================
+
+ESTABLISHED ARCHITECTURAL DECISIONS
+
+The following decisions are established and must not be changed casually.
+
+14.1 PROJECT IDENTITY
+ Project Name   : betterVRAMd
+ Python Package : vramd
+ Platform       : Linux / WSL2
+ Inference      : Custom CUDA-enabled llama.cpp
+ Model Format   : GGUF
+
+14.2 RESOURCE MANAGEMENT
+ - Only one active inference model at a time.
+ - Only one inference worker/server at a time.
+ - Multiple models may be registered.
+ - CPU-only inference must be supported.
+ - Hybrid CPU/GPU inference must be supported.
+ - GPU inference must be supported when feasible.
+ - Resource budgeting must precede loading decisions.
+ - Memory estimates are preliminary, not guarantees.
+ - GPU memory reclamation must be verified where possible.
+
+14.3 MODEL HANDLING
+ - Model registration does not load weights.
+ - Metadata inspection is read-only.
+ - mmap is the default cache strategy.
+ - Memory locking is disabled by default.
+ - mmproj is an auxiliary component of its associated model.
+ - Model switching requires unloading the previous model.
+ - Model mappings and inference residency are separate concepts.
+
+14.4 INFERENCE ARCHITECTURE
+ - llama-server is the primary backend.
+ - The inference backend does not own the server subprocess.
+ - WorkerProcess owns subprocess lifecycle.
+ - LifecycleController coordinates model lifecycle.
+ - InferenceScheduler coordinates request execution.
+ - Scheduling must respect lifecycle and resource-management
+   decisions.
+
+14.5 COMPONENT OWNERSHIP
+ - VRAMdManager owns application-level components.
+ - LifecycleController receives dependencies through injection.
+ - WorkerProcess owns the inference subprocess.
+ - LlamaCppBackend owns HTTP communication.
+ - ModelRegistry owns registration metadata.
+ - RAMCacheManager owns memory mappings.
+ - Monitors provide measurements only.
+ - ResourceBudgetCalculator calculates limits.
+ - ModelMemoryEstimator estimates requirements.
+ - ModelLayerSelector recommends configurations.
+
+14.6 DEVELOPMENT SAFETY
+ - Do not run inference tests during current development.
+ - Avoid unnecessary GPU workloads.
+ - Do not recreate the working virtual environment.
+ - Preserve established architecture unless a justified
+   improvement is identified.
+ - Prefer small, reviewable changes over unnecessary rewrites.
+ - Prioritize system stability over inference performance.
+
+
+===============================================================================
+
+DOCUMENT MAINTENANCE
+15.1 PROJECT_CONTEXT.txt
+
+Update when:
+
+ - Project objectives change.
+ - Hardware or environment assumptions change.
+ - Architecture changes.
+ - Component ownership changes.
+ - New architectural constraints are established.
+ - Major integration boundaries change.
+
+
+Do not use this document to track ordinary implementation progress or temporary development problems.
+
+15.2 PROJECT_DEV.txt
+
+Update when:
+
+ - A module is implemented.
+ - A module is reviewed.
+ - A code change is made.
+ - A problem is discovered or resolved.
+ - Testing is performed.
+ - Development priorities change.
+
+
+This document is the authoritative record of implementation and testing status.
+
+15.3 PROJECT_WORKFLOW.txt
+
+Update when:
+
+ - Development procedures change.
+ - Review practices change.
+ - Testing procedures change.
+ - Documentation maintenance procedures change.
+ - Session handover procedures change.
+
+15.4 PROJECT TREE
+
+The documented repository tree must reflect actual files.
+
+Update it whenever files are created, removed or reorganized.
+
+Do not present planned modules as existing files.
+
+15.5 DOCUMENT CONSISTENCY
+
+All three project documents must remain consistent.
+
+However, each document has a separate responsibility.
+
+PROJECT_CONTEXT.txt Defines what the project is and how its architecture is intended to work.
+
+PROJECT_DEV.txt Defines what has actually been implemented and what remains to be done.
+
+PROJECT_WORKFLOW.txt Defines how development and maintenance are performed.
+
+=============================================================================== END OF PROJECT CONTEXT

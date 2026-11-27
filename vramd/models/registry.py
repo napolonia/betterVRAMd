@@ -1,7 +1,12 @@
 
+"""Maintain metadata for registered local GGUF models."""
+
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+#One important note: This uses filename-prefix matching. It supports your current naming convention,
+#  but we should later verify that the projector association is unambiguous.
 
 @dataclass
 class ModelInfo:
@@ -10,6 +15,7 @@ class ModelInfo:
     size_bytes: int
     format: str
     registered_at: float
+    mmproj_path: Path | None = None
 
     @property
     def size_mb(self) -> float:
@@ -23,6 +29,17 @@ class ModelRegistry:
         self.model_directory = model_directory.expanduser()
         self.models: dict[str, ModelInfo] = {}
 
+    def _find_projector(self, model_path: Path) -> Path | None:
+        """Find a matching multimodal projector, if available."""
+
+        prefix = f"mmproj-{model_path.stem}"
+
+        candidates = sorted(
+            model_path.parent.glob(f"{prefix}*.gguf")
+        )
+
+        return candidates[0].resolve() if candidates else None
+
     def register(self, path: str | Path) -> ModelInfo:
         model_path = Path(path).expanduser().resolve()
 
@@ -34,12 +51,18 @@ class ModelRegistry:
         if model_path.suffix.lower() != ".gguf":
             raise ValueError("Only GGUF models are supported.")
 
+        if model_path.name.lower().startswith("mmproj-"):
+            raise ValueError(
+                "Multimodal projectors cannot be registered "
+                "as independent models."
+            )
+
         name = model_path.stem
 
         if name in self.models:
             raise ValueError(f"Model already registered: {name}")
 
-        import time
+        mmproj_path = self._find_projector(model_path)
 
         info = ModelInfo(
             name=name,
@@ -47,6 +70,7 @@ class ModelRegistry:
             size_bytes=model_path.stat().st_size,
             format="gguf",
             registered_at=time.time(),
+            mmproj_path=mmproj_path,
         )
 
         self.models[name] = info
@@ -71,9 +95,13 @@ class ModelRegistry:
         ]
 
     def discover(self) -> list[Path]:
-        """Find GGUF files without automatically registering them."""
+        """Find main GGUF files without registering them."""
 
         if not self.model_directory.exists():
             return []
 
-        return sorted(self.model_directory.glob("*.gguf"))
+        return sorted(
+            path
+            for path in self.model_directory.glob("*.gguf")
+            if not path.name.lower().startswith("mmproj-")
+        )
