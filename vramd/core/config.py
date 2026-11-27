@@ -53,6 +53,16 @@ class VRAMdConfig(BaseModel):
     context_size: int = Field(default=2048, ge=512)
     default_gpu_layers: int = Field(default=10, ge=0)
     threads: int = Field(default=4, ge=1)
+    
+    # llama-server
+    server_host: str = "127.0.0.1"
+    server_port: int = Field(default=8080, ge=1, le=65535)
+    server_dynamic_port: bool = False
+    server_startup_timeout_seconds: int = Field(default=60, ge=1)
+    server_request_timeout_seconds: int = Field(default=300, ge=1)
+    server_health_check_interval_seconds: float = Field(default=2.0, gt=0)
+    server_max_parallel_requests: int = Field(default=1, ge=1)
+    server_api_key: str | None = None
 
     # Worker
     use_separate_process: bool = True
@@ -137,6 +147,15 @@ TOML_MAPPING = {
         "context_size": "context_size",
         "default_gpu_layers": "default_gpu_layers",
         "threads": "threads",
+        "server_host": "server_host",
+        "server_port": "server_port",
+        "server_dynamic_port": "server_dynamic_port",
+        "server_startup_timeout_seconds": "server_startup_timeout_seconds",
+        "server_request_timeout_seconds": "server_request_timeout_seconds",
+        "server_health_check_interval_seconds": "server_health_check_interval_seconds",
+        "server_max_parallel_requests": "server_max_parallel_requests",
+        "server_api_key": "server_api_key",
+
     },
     "worker": {
         "use_separate_process": "use_separate_process",

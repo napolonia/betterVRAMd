@@ -68,6 +68,24 @@ context_size = 2048
 default_gpu_layers = 10
 threads = 4
 
+# llama-server
+server_host = "127.0.0.1"
+server_port = 8080
+server_dynamic_port = false
+
+# Server lifecycle and communication
+server_startup_timeout_seconds = 60
+server_request_timeout_seconds = 300
+server_health_check_interval_seconds = 2
+
+# Conservative concurrency
+server_max_parallel_requests = 1
+
+# Optional authentication
+# Prefer VRAMD_SERVER_API_KEY environment variable for secrets.
+# server_api_key = ""
+
+
 # ============================================================
 # WORKER PROCESS
 # ============================================================

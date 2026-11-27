@@ -73,6 +73,7 @@ Implement logging and error handling.
 Review integrated architecture.
 Update documentation.
 Conduct controlled final testing.
+
 5. TESTING POLICY
 
 Testing remains deferred until architecture implementation is complete.
@@ -109,10 +110,27 @@ Agreed architecture:
 Primary: llama-server (persistent inference).
 Future optional backend: llama-cli.
 
+CONFIGURATION UPDATE
+
+llama-server settings are configurable through config/default.toml.
+
+Includes:
+- Host and port
+- Dynamic port allocation
+- Startup timeout
+- Request timeout
+- Health-check interval
+- Maximum parallel requests
+- Optional API authentication
+
+Configuration is loaded through VRAMdConfig and TOML_MAPPING.
+Environment variables take precedence over TOML.
+Server process ownership remains with worker/process.py.
+
 Planned modules:
 
 vramd/inference/base.py
-Status: Not implemented.
+Status: implemented.
 Purpose: Common backend interface.
 
 vramd/inference/llama_cpp.py
