@@ -47,9 +47,12 @@ class LifecycleController:
         return self.worker.backend if self.worker else None
 
     def register_model(self, path: str) -> ModelInfo:
+        """Register a model without loading its weights."""
         return self.registry.register(path)
 
     def unregister_model(self, name: str) -> None:
+        """Unregister a model after releasing any cached resources."""
+
         self.registry.get(name)
 
         if name == self._active_model:
@@ -61,7 +64,7 @@ class LifecycleController:
             }
 
             if name in cached_names:
-                self.cache.unload(name)
+                self.unload_model(name)
 
         self.registry.unregister(name)
 
@@ -78,7 +81,7 @@ class LifecycleController:
         budget: ResourceBudget,
         max_gpu_layers: int | None = None,
     ) -> ModelMemoryEstimate:
-        """Recommend a feasible CPU/GPU configuration without loading."""
+        """Select a feasible CPU/GPU configuration without loading."""
 
         if self.layer_selector is None:
             raise RuntimeError(
@@ -109,14 +112,29 @@ class LifecycleController:
                 "Unload the existing model first."
             )
 
+        if self.worker is not None and self.worker.is_running:
+            if name != self._active_model:
+                raise RuntimeError(
+                    "Cannot cache another model while an "
+                    "inference worker is active."
+                )
+
         return self.cache.load(name, model)
 
     def load_model(
         self,
         name: str,
-        gpu_layers: int,
+        budget: ResourceBudget,
+        max_gpu_layers: int | None = None,
     ):
-        """Cache and start one model using the inference worker."""
+        """
+        Select, cache and start one model.
+
+        Resource evaluation must succeed before model caching
+        or worker startup.
+
+        The caller must supply a current resource budget.
+        """
 
         if self.worker is None:
             raise RuntimeError(
@@ -134,7 +152,29 @@ class LifecycleController:
                 "An inference worker is already running."
             )
 
+        # Clear any stale, already-terminated worker reference.
+        if self.worker.process is not None:
+            self.worker.stop()
+
         model = self.registry.get(name)
+
+        # Evaluate resource requirements before caching or loading.
+        if max_gpu_layers is None:
+            max_gpu_layers = self.config.default_gpu_layers
+
+        estimate = self.select_model_configuration(
+            name=name,
+            budget=budget,
+            max_gpu_layers=max_gpu_layers,
+        )
+
+        if not estimate.feasible:
+            raise RuntimeError(
+                "Selected model configuration is not feasible "
+                "under the current resource budget."
+            )
+
+        selected_gpu_layers = estimate.gpu_layers
 
         cached_names = {
             item["name"]
@@ -146,21 +186,62 @@ class LifecycleController:
                 "Another model is cached. Unload it first."
             )
 
+        cache_created = False
+
         if name not in cached_names:
             self.cache_model(name)
+            cache_created = True
 
+        # Reserve the active-model identity before starting the worker.
         self._active_model = name
 
         try:
-            return self.worker.start(
+            backend = self.worker.start(
                 model_path=model.path,
-                gpu_layers=gpu_layers,
+                gpu_layers=selected_gpu_layers,
+                mmproj_path=model.mmproj_path,
             )
 
-        except Exception:
             if not self.worker.is_running:
-                self.cache.unload(name)
-                self._active_model = None
+                raise RuntimeError(
+                    "Inference worker stopped immediately "
+                    "after becoming ready."
+                )
+
+            return backend
+
+        except Exception as exc:
+
+            # A failed startup may leave a process tracked if cleanup
+            # could not terminate it. Preserve its model mapping.
+            if (
+                self.worker.process is not None
+                and not self.worker.is_running
+            ):
+                try:
+                    self.worker.stop()
+                except Exception:
+                    pass
+
+            if self.worker.process is not None:
+                raise RuntimeError(
+                    f"Model '{name}' startup failed and the worker "
+                    "process remains tracked. The model mapping "
+                    "has been retained for safe cleanup."
+                ) from exc
+
+            self._active_model = None
+
+            # Only release a mapping created by this load attempt.
+            # Preserve mappings that existed before the attempt.
+            if cache_created:
+                try:
+                    self.cache.unload(name)
+                except Exception as cleanup_error:
+                    raise RuntimeError(
+                        f"Model '{name}' startup failed and its "
+                        f"cache cleanup also failed: {cleanup_error}"
+                    ) from exc
 
             raise
 
@@ -181,9 +262,23 @@ class LifecycleController:
                     "Active model has no associated worker."
                 )
 
+            # Do not release the mapping unless worker shutdown succeeds.
             self.worker.stop()
 
             self._active_model = None
+
+        elif self.worker is not None and self.worker.is_running:
+            raise RuntimeError(
+                "An inference worker is running without a tracked "
+                "active model. Cache unloading is unsafe."
+            )
+
+        elif (
+            self.worker is not None
+            and self.worker.process is not None
+        ):
+            # Clear a terminated but still tracked subprocess.
+            self.worker.stop()
 
         cached_names = {
             item["name"]
@@ -194,14 +289,19 @@ class LifecycleController:
             self.cache.unload(name)
 
     def warm_model(self, name: str) -> None:
-        """Warm the cached model if warming is enabled."""
+        """Warm the cached model if warming is explicitly enabled."""
 
-        if self.config is not None and not self.config.warm_cache_enabled:
+        if (
+            self.config is not None
+            and not self.config.warm_cache_enabled
+        ):
             return
 
         self.cache.warm(name)
 
     def get_model_state(self, name: str) -> str:
+        """Return the current model residency state."""
+
         self.registry.get(name)
 
         if name == self._active_model:
@@ -218,6 +318,8 @@ class LifecycleController:
         )
 
     def list_models(self) -> list[dict]:
+        """List registered models and their current states."""
+
         cached_names = {
             item["name"]
             for item in self.cache.list_cached()
@@ -243,8 +345,20 @@ class LifecycleController:
     def shutdown(self) -> None:
         """Stop inference before releasing all memory mappings."""
 
-        if self.worker is not None and self.worker.process is not None:
-            self.worker.stop()
+        if self.worker is not None:
+            if (
+                self.worker.process is not None
+                or self._active_model is not None
+            ):
+                self.worker.stop()
+
+        elif self._active_model is not None:
+            raise RuntimeError(
+                "Active model has no associated worker. "
+                "Cannot safely release its resources."
+            )
 
         self._active_model = None
+
+        # Only reached after successful worker shutdown.
         self.cache.clear()

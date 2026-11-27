@@ -610,9 +610,111 @@ System stability takes priority over test speed.
 
 IMMEDIATE NEXT TASK
 
-NEXT DEVELOPMENT TASK:
+Development Handoff — VRAMd
 
-[06] Complete model loading and unloading coordination.
+Date: 2026-11-27
+
+Current development position
+
+We are reviewing and improving the VRAMd codebase file by file.
+
+The user has saved the individual code reviews and will append them to this development document as additional reference material.
+
+Important: Do not restart the review of previously reviewed files. Continue from the exact stopping point documented below.
+
+Architecture decisions
+Model lifecycle
+LifecycleController coordinates model registration, inspection, caching, loading and unloading.
+WorkerProcess exclusively owns the llama-server subprocess lifecycle.
+LlamaCppBackend builds server commands and communicates with the running server.
+Restart-on-crash functionality is deferred to future work.
+Inference interface
+Use the existing llama.cpp HTTP server and its available WebUI for now.
+Do not build a dedicated VRAMd inference interface yet.
+Keep the backend abstraction independent of the frontend.
+A custom frontend/API can be considered when the underlying architecture is stable.
+Memory estimation
+The current estimator is incomplete.
+More comprehensive memory estimation will be implemented in a future development phase.
+Do not expand the estimator during the current review unless a critical correctness issue is discovered.
+Dynamic port allocation
+A TODO comment documents the allocation race associated with dynamic port selection.
+This is acknowledged future work.
+Completed reviews
+
+The following files have been reviewed:
+
+core/lifecycle.py
+worker/process.py
+inference/llama_cpp.py
+Manager implementation (VRAMdManager)
+models/selector.py
+models/estimator.py
+core/budget.py
+models/cache.py
+models/registry.py
+models/metadata.py
+core/config.py
+core/scheduler.py — initial review and thread-safety improvements.
+
+Additional review notes are maintained separately and will be appended to this document.
+
+Current file: core/scheduler.py
+
+Thread-safety improvements have been implemented and approved.
+
+Added threading.RLock.
+Protected all eight public methods that access shared scheduler state:
+submit
+next_request
+complete
+fail
+cancel
+get_request
+list_requests
+get_status
+Nested locking is safe because RLock is used.
+Import ordering has been organized.
+Comments document two outstanding considerations:
+list_requests() returns mutable request objects.
+get_request() returns a mutable request object.
+
+These two concerns are acknowledged but intentionally deferred. Do not change them without discussing the implications first.
+
+Status: Saved and approved.
+
+Next task
+
+Continue reviewing core/scheduler.py.
+
+The next topic is request-history retention.
+
+Discuss a configurable retention limit to prevent _requests from growing indefinitely.
+
+Consider:
+
+Whether completed, failed and cancelled requests should be eligible for removal.
+Whether queued and running requests must always be retained.
+Whether the retention limit should be configurable.
+How request IDs and heap entries should behave when old requests are removed.
+
+Do not implement anything until the design has been discussed and agreed.
+
+Working agreement
+Review one file or one clearly defined concern at a time.
+Explain the issue and proposed solution before asking for code changes.
+Avoid unnecessary architectural complexity.
+Preserve existing responsibilities and separation of concerns.
+Do not introduce unrelated refactoring.
+Wait for confirmation before considering a proposed change approved.
+The user saves changes locally and confirms when ready.
+Once a file is approved and saved, move to the next task.
+Do not repeatedly revisit previously approved files unless a new dependency or critical issue requires it.
+
+Immediate starting point: Request-history retention in core/scheduler.py.
+
+
+REVIEW OF EACH FILE IS AT THE END = <REVIEW>
 
 
 This work must preserve the established component ownership boundaries.
@@ -768,3 +870,684 @@ The current testing restrictions remain in effect until the appropriate developm
 Project : betterVRAMd Development Phase: 1 - Core Infrastructure Current Status : Implementation In Progress Current Milestone: Core Infrastructure Immediate Task : Complete Model Loading and Unloading Coordination
 
 =============================================================================== END OF PROJECT DEVELOPMENT STATUS
+
+
+<REVIEW>
+Review: vramd/core/lifecycle.py
+The file has a reasonable initial structure, and its main responsibility is correctly focused on coordinating model lifecycle operations.
+
+However, I would not mark Task 06 complete yet. There are several important gaps.
+
+1. Existing functionality
+Model registration and unregistration.
+
+Read-only metadata inspection.
+
+GPU-layer configuration selection.
+
+RAM cache loading and unloading.
+
+Basic single-active-model enforcement.
+
+Worker startup and shutdown coordination.
+
+Model state reporting.
+
+Cache warming.
+
+Application shutdown cleanup.
+
+2. Issues requiring attention
+Area
+
+Finding
+
+Resource validation
+
+load_model() does not itself verify that the selected configuration is feasible.
+
+Loading state
+
+_active_model is set before worker startup succeeds.
+
+Concurrency
+
+No explicit protection against simultaneous lifecycle operations.
+
+Startup failure
+
+Cache cleanup can fail and obscure the original startup exception.
+
+Worker consistency
+
+A running worker with _active_model is None is not handled safely.
+
+Unloading
+
+GPU memory reclamation is not verified.
+
+Multimodal
+
+No explicit mmproj handling is visible here.
+
+Shutdown
+
+Cleanup reporting and failure-state handling need review.
+
+One particularly important issue is the distinction between loading, resident, and running. These should not be represented by a single _active_model state without appropriate safeguards.
+
+3. Review strategy
+I don't recommend rewriting this file yet.
+
+Several of these concerns depend on the actual interfaces and behaviour of the worker, backend and cache manager. We should inspect those before deciding on changes.
+
+Next file
+Please provide the current local contents of:
+
+vramd/worker/process.py
+
+I particularly want to establish:
+
+How start() handles failed startup.
+
+Whether readiness is verified before returning.
+
+How stop() handles graceful and forced termination.
+
+Whether process references survive cleanup failures.
+
+How the backend is initialized and exposed.
+
+How the selected port is handled.
+
+This is the most important dependency to review before modifying lifecycle.py.
+
+No code changes or tests yet.
+
+
+Review: vramd/worker/process.py
+This is a substantially more complete implementation than the lifecycle controller.
+
+The worker correctly owns subprocess creation and termination, and the backend remains separate.
+
+What is already implemented
+Dynamic port selection.
+
+llama-server command construction through LlamaCppBackend.
+
+Separate subprocess creation.
+
+Startup readiness polling.
+
+Early process-exit detection.
+
+Graceful SIGTERM shutdown.
+
+Optional forced SIGKILL termination.
+
+Process-group signalling.
+
+Failed-start cleanup.
+
+Retention of process references when cleanup fails.
+
+Backend and port tracking.
+
+Findings
+Area
+
+Assessment
+
+Process ownership
+
+Correct
+
+Startup monitoring
+
+Implemented
+
+Readiness checking
+
+Implemented
+
+Graceful shutdown
+
+Implemented
+
+Forced shutdown
+
+Implemented
+
+Failed-start cleanup
+
+Implemented
+
+Cleanup failure tracking
+
+Mostly correct
+
+Dynamic port handling
+
+Implemented, with a possible port-allocation race
+
+Restart-on-crash
+
+Not implemented
+
+GPU reclamation verification
+
+Not implemented
+
+Important lifecycle interaction
+There is one behaviour worth preserving:
+
+If startup fails and cleanup also fails, WorkerProcess retains its process reference.
+
+The lifecycle controller must consequently retain its active/loading state and refuse another model load until that process is dealt with.
+
+This is essential to the single-worker guarantee.
+
+Next file
+Please provide the current contents of:
+
+vramd/inference/llama_cpp.py
+
+I need to verify:
+
+Command construction and GPU-layer arguments.
+
+Optional mmproj support.
+
+Server host and port handling.
+
+Readiness endpoint behaviour.
+
+HTTP error and timeout handling.
+
+Whether backend communication remains independent of subprocess ownership.
+
+After that, we'll inspect the resource-budget and selector interfaces needed to complete the loading decisions.
+
+No changes or tests yet.
+
+Review: vramd/inference/llama_cpp.py
+The backend has a clear separation of responsibilities and is reasonably complete as an initial HTTP client.
+
+Existing functionality
+Executable and model-path validation.
+
+llama-server command construction.
+
+CPU/GPU layer configuration.
+
+Context size and thread configuration.
+
+Optional mmproj argument.
+
+API-key file support.
+
+HTTP health checks.
+
+Startup readiness waiting.
+
+Inference request construction and response parsing.
+
+Backend-specific exception handling.
+
+Findings relevant to Task 06
+mmproj integration: The backend supports it, but LifecycleController.load_model() currently doesn't pass an mmproj path.
+
+Readiness: The worker performs readiness checks, which is the correct ownership arrangement.
+
+Backend availability: The backend is constructed before subprocess startup and exposed through the worker.
+
+Configuration: The selected port is correctly passed from the worker.
+
+Resource verification: The backend cannot establish whether the expected GPU allocation actually occurred. That requires separate monitoring and lifecycle coordination.
+
+One issue to revisit later: generate() currently performs a health check before every inference request. This is not a blocker for task 06, but it adds an extra HTTP round trip.
+
+No inference requests will be executed during this development work.
+
+Next file: resource-selection integration
+Please provide:
+
+vramd/core/manager.py
+
+I want to establish how VRAMdManager currently supplies:
+
+ResourceBudget to lifecycle operations.
+
+ModelLayerSelector and its dependencies.
+
+System and GPU measurements.
+
+Configuration and component ownership.
+
+Lifecycle and scheduler integration.
+
+This determines where resource evaluation belongs without duplicating responsibilities.
+
+After reviewing the manager, we'll inspect the selector and estimator interfaces, then finalize the Task 06 implementation plan.
+
+Still review-only. No code changes, tests, model loading or GPU operations.
+
+Review: vramd/core/manager.py
+The manager has the necessary building blocks for resource-aware model loading, but the complete orchestration path is missing.
+
+Existing functionality
+Constructs and owns the model registry and RAM cache.
+
+Constructs metadata inspection, estimation and GPU-layer selection.
+
+Injects lifecycle dependencies.
+
+Constructs the inference scheduler.
+
+Owns system and GPU monitors.
+
+Calculates resource budgets from current measurements.
+
+Exposes model memory estimation and configuration selection.
+
+Coordinates application startup and shutdown.
+
+Main finding: missing loading orchestration
+Currently, the manager can select a feasible model configuration:
+
+select_model_configuration()
+
+The lifecycle controller can start a model:
+
+load_model(name, gpu_layers)
+
+But there is no integrated operation connecting those two actions.
+
+Consequently, a caller can currently invoke load_model() with an arbitrary GPU-layer count without going through resource evaluation.
+
+This is an important gap for Task 06.
+
+I recommend eventually providing a manager-level loading operation that:
+
+Obtains current resource measurements.
+
+Calculates the resource budget.
+
+Inspects and estimates the requested model.
+
+Selects a feasible configuration.
+
+Delegates the actual lifecycle operation.
+
+Returns the resulting model configuration and worker status.
+
+The lifecycle controller should still enforce its own single-model and single-worker restrictions.
+
+Next file: vramd/models/selector.py
+Please paste its current local contents.
+
+I want to verify:
+
+How feasible GPU-layer configurations are selected.
+
+How CPU-only fallback works.
+
+How NoFeasibleConfigurationError is handled.
+
+Whether the selected configuration exposes everything needed by the lifecycle controller.
+
+Whether incomplete metadata can cause unsafe decisions.
+
+After that, we'll inspect estimator.py and budget.py.
+
+Then I'll consolidate the findings into a precise Task 06 implementation plan, starting with one file at a time.
+
+No modifications or tests yet.
+
+
+Review: vramd/models/selector.py
+The selector follows the intended architecture and has several good safety properties.
+
+Existing functionality
+Calculates CPU-only feasibility first.
+
+Checks whether GPU offloading is permitted.
+
+Uses transformer block metadata.
+
+Respects max_gpu_layers.
+
+Searches from the highest GPU-layer count downwards.
+
+Does not assume feasibility is monotonic.
+
+Falls back to CPU-only when GPU configurations are infeasible.
+
+Raises NoFeasibleConfigurationError when CPU-only is also infeasible.
+
+One important integration detail
+The selector returns a ModelMemoryEstimate, not just a GPU-layer count.
+
+The lifecycle and manager integration should preserve this result so that resource estimates and warnings remain available to the caller.
+
+There is also a distinction between a configuration being estimated as feasible and the backend successfully loading it. The selector cannot guarantee the latter.
+
+Next file: vramd/models/estimator.py
+Please provide its current local contents.
+
+I need to establish the exact fields in ModelMemoryEstimate, how RAM/VRAM feasibility is calculated, and which limitations affect loading decisions.
+
+After that, we'll inspect vramd/core/budget.py and have enough information to design the complete Task 06 changes without guessing at interfaces.
+
+
+Review: vramd/models/estimator.py
+Received and recorded as the current authoritative source for the supplied files.
+
+The following implementation areas are now available for review:
+
+vramd/core/lifecycle.py
+
+vramd/worker/process.py
+
+vramd/inference/llama_cpp.py
+
+vramd/core/manager.py
+
+vramd/models/selector.py
+
+vramd/models/estimator.py
+
+Current development task remains [06]: Complete model loading and unloading coordination.
+
+I will preserve the established architecture and all development restrictions:
+
+No inference execution.
+
+No model loading or GPU allocation.
+
+No integrated testing.
+
+No unnecessary environment changes.
+
+One logical task at a time.
+
+Existing component ownership boundaries remain intact.
+
+I will not propose modifications until the relevant file review is complete.
+
+Ready for the next file.
+
+Received vramd/core/budget.py.
+
+Added to the current implementation review set.
+
+Current task: [06] Complete model loading and unloading coordination.
+
+No implementation changes or tests performed. All existing development restrictions remain in effect.
+
+Ready for the next file.
+
+Received vramd/models/cache.py.
+
+Review observation
+One important lifecycle consideration identified:
+
+RAMCacheManager.unload() closes the memory mapping before removing its cache entry.
+
+If mapping.close() fails, the entry remains registered, which is preferable to silently losing track of a mapping that remains open.
+
+warm() explicitly reads every mapped page. This can cause substantial RAM pressure and must not be invoked during the current development phase.
+
+No changes proposed yet.
+
+Next file: vramd/models/registry.py.
+
+No tests, inference or model loading performed.
+
+Received vramd/models/registry.py.
+
+Review observations
+Registration is separate from model loading, as required.
+
+Registration does not load model weights or warm memory pages.
+
+Unregistration itself does not enforce residency restrictions; LifecycleController currently handles that coordination.
+
+Multimodal projector association uses filename-prefix matching and may select an ambiguous candidate.
+
+Model identity is based on filename stem, so duplicate names from different directories are rejected.
+
+No modifications proposed yet.
+
+Received vramd/models/metadata.py.
+
+Review observations
+Uses the configured GGUF reader for metadata inspection.
+
+Does not load model weights into inference.
+
+Collects tensor-level information required by ModelMemoryEstimator.
+
+Provides architecture and context-length metadata.
+
+Converts GGUF fields into Python-compatible values.
+
+Wraps inspection failures in ModelMetadataError.
+
+One consideration: tensor metadata is retained in memory as a complete list. This is relevant when inspecting particularly large GGUF files, although it does not itself constitute inference or GPU allocation.
+
+Received vramd/core/config.py.
+
+Review observations
+Pydantic configuration validation is implemented.
+
+TOML-to-model mapping is explicit.
+
+VRAMD_ environment overrides take precedence over TOML.
+
+Resource limits have validation constraints.
+
+Single-worker enforcement is reflected by max_workers=1.
+
+Dynamic server port configuration is supported.
+
+Worker shutdown and startup timeouts are configurable.
+
+restart_on_crash is configured but its implementation remains outstanding.
+
+verify_memory_release is configured but lifecycle-level verification remains outstanding.
+
+One architectural consideration: use_separate_process is currently configured, but WorkerProcess always creates a subprocess. This may need clarification during the final architecture review.
+
+
+Received vramd/core/scheduler.py.
+
+Review observations
+Priority-based queueing is implemented using a heap.
+
+Request states and transitions are represented explicitly.
+
+Single-request execution is not enforced by the scheduler itself.
+
+The scheduler does not currently communicate with LifecycleController.
+
+Requests can specify arbitrary model names without registry validation.
+
+No execution worker or backend dispatch mechanism is implemented.
+
+No synchronization protects queue operations against concurrent callers.
+
+The important architectural point is that the scheduler must not independently load or switch models. Execution must go through the lifecycle-controlled path.
+
+
+Task [06] — Lifecycle implementation review
+1. Existing implementation
+The basic ownership architecture is correctly established:
+
+Component
+
+Responsibility
+
+Assessment
+
+LifecycleController
+
+Model lifecycle
+
+Partially complete
+
+WorkerProcess
+
+Subprocess ownership
+
+Initial implementation complete
+
+LlamaCppBackend
+
+HTTP communication
+
+Implemented
+
+RAMCacheManager
+
+Memory mapping
+
+Implemented
+
+ModelRegistry
+
+Registration
+
+Implemented
+
+ModelMetadataInspector
+
+GGUF inspection
+
+Implemented
+
+ModelMemoryEstimator
+
+Memory estimation
+
+Implemented
+
+ModelLayerSelector
+
+GPU-layer selection
+
+Implemented
+
+ResourceBudgetCalculator
+
+Resource budgeting
+
+Implemented
+
+InferenceScheduler
+
+Request queue
+
+Initial implementation
+
+These are implementation assessments, not testing results.
+
+2. Issues requiring attention
+I identified the following important issues.
+
+A. Resource-budget enforcement
+
+LifecycleController.load_model() accepts a GPU-layer count directly.
+
+It does not independently establish that:
+
+A current resource budget exists.
+
+The selected configuration is feasible.
+
+The configured RAM and VRAM limits are respected.
+
+Resource selection currently exists separately in VRAMdManager.
+
+We need to establish a clear loading decision path.
+
+B. Multimodal projector integration
+
+ModelRegistry identifies an associated projector, but:
+
+LifecycleController does not pass mmproj_path to WorkerProcess.start().
+
+The projector is not included in memory estimation.
+
+Projector caching and residency are not coordinated.
+
+C. Unloading failure handling
+
+There is an important issue in unregister_model().
+
+If unloading the cache fails after the worker has stopped, the registry can still unregister the model while its cache entry remains.
+
+We should prevent this inconsistent state.
+
+D. Lifecycle state management
+
+The controller currently tracks only:
+
+Registered.
+
+Cached.
+
+Running.
+
+It needs more explicit handling of transitional and failed operations, particularly when startup cleanup cannot terminate the subprocess.
+
+E. Scheduler integration
+
+The scheduler currently manages requests independently.
+
+It does not yet:
+
+Validate model registration.
+
+Coordinate with the lifecycle controller.
+
+Ensure model residency before dispatch.
+
+Dispatch requests through the active backend.
+
+This is a subsequent integration concern, not something to solve by giving the scheduler subprocess ownership.
+
+F. GPU memory reclamation
+
+The configuration supports verify_memory_release, but there is no implemented verification procedure in the lifecycle.
+
+We should distinguish successful process termination from confirmed GPU memory reclamation.
+
+3. Recommended implementation order
+I recommend the following sequence:
+
+Correct LifecycleController resource-aware loading.
+
+Complete model startup and readiness coordination.
+
+Correct unloading and failure cleanup.
+
+Integrate multimodal projector handling.
+
+Integrate lifecycle decisions with VRAMdManager.
+
+Connect scheduler execution to the lifecycle-controlled backend.
+
+No inference or integrated testing is necessary for these implementation changes.
+
+4. Immediate next action
+Review collection complete
+Start with vramd/core/lifecycle.py.
+
+I recommend modifying that file first, preserving its existing public methods wherever practical.
+
+We will work on one file at a time, review the resulting implementation, and wait for your confirmation before proceeding.
+
+No code has been changed, and no tests, model loading or GPU workloads have been performed.
+
+

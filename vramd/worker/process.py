@@ -62,6 +62,7 @@ class WorkerProcess:
     @staticmethod
     def _find_available_port(host: str) -> int:
         """Select an available TCP port."""
+
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.bind((host, 0))
             return sock.getsockname()[1]
@@ -79,12 +80,16 @@ class WorkerProcess:
                 "An inference worker is already running."
             )
 
+        # A previous process may have exited without being cleared.
+        if self._process is not None:
+            self.stop()
+
         self._clear_state()
 
         try:
             self._port = (
                 self._find_available_port(self.config.server_host)
-                if self.config.server_dynamic_port
+                if self.config.server_dynamic_port #TODO: allocation race, not atomic
                 else self.config.server_port
             )
 
@@ -116,6 +121,7 @@ class WorkerProcess:
             )
 
             self._backend = backend
+
             self._wait_until_ready()
 
             logger.info(
@@ -127,7 +133,14 @@ class WorkerProcess:
             return backend
 
         except Exception as exc:
-            self._cleanup_failed_start()
+            try:
+                self._cleanup_failed_start()
+
+            except WorkerShutdownError as cleanup_error:
+                raise WorkerStartupError(
+                    "llama-server startup failed and process cleanup "
+                    f"also failed: {cleanup_error}"
+                ) from exc
 
             if isinstance(exc, WorkerProcessError):
                 raise
@@ -145,6 +158,7 @@ class WorkerProcess:
         )
 
         while time.monotonic() < deadline:
+
             if self._process is None:
                 raise WorkerStartupError(
                     "Worker process disappeared during startup."
@@ -158,7 +172,10 @@ class WorkerProcess:
                     f"(exit code {return_code})."
                 )
 
-            if self._backend is not None and self._backend.is_ready():
+            if (
+                self._backend is not None
+                and self._backend.is_ready()
+            ):
                 return
 
             time.sleep(
@@ -215,6 +232,7 @@ class WorkerProcess:
             )
 
         except subprocess.TimeoutExpired:
+
             if not self.config.force_termination:
                 raise WorkerShutdownError(
                     "llama-server did not stop within the configured "
@@ -272,18 +290,21 @@ class WorkerProcess:
                 timeout=self.config.shutdown_timeout_seconds
             )
 
-        except (subprocess.TimeoutExpired, OSError):
+        except (subprocess.TimeoutExpired, OSError) as exc:
             logger.exception(
-                "Failed to clean up llama-server process %s. "
-                "Process remains tracked.",
+                "Failed to clean up llama-server process %s.",
                 process.pid,
             )
-            return
+
+            raise WorkerShutdownError(
+                "Failed to clean up llama-server. "
+                "Process remains tracked."
+            ) from exc
 
         self._clear_state()
 
     def _clear_state(self) -> None:
-        """Clear references to the managed process and backend."""
+        """Clear references after the process has stopped."""
 
         self._process = None
         self._backend = None

@@ -11,10 +11,10 @@ import json
 import os
 import socket
 import time
+from collections.abc import Sequence
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
-from collections.abc import Sequence
 
 from vramd.inference.base import (
     BackendUnavailableError,
@@ -25,6 +25,8 @@ from vramd.inference.base import (
     InferenceTimeoutError,
 )
 
+#TODO: limitation remains: The health check and inference request are separate HTTP calls. 
+#   The server can become unavailable between them; the actual request handling must still deal with that possibility.
 
 class LlamaCppBackend(InferenceBackend):
     """HTTP client and command builder for llama-server."""
@@ -34,7 +36,8 @@ class LlamaCppBackend(InferenceBackend):
 
         if config.server_dynamic_port and port is None:
             raise ValueError(
-                "A dynamically selected server port must be provided by the worker."
+                "A dynamically selected server port must be provided "
+                "by the worker."
             )
 
         self.host = config.server_host
@@ -46,27 +49,37 @@ class LlamaCppBackend(InferenceBackend):
             if config.server_api_key_file is not None
             else None
         )
+
         self.api_key = None
 
         if self.api_key_file is not None:
             key_path = self.api_key_file
 
-            if not key_path.is_file() or not os.access(key_path, os.R_OK):
+            if not key_path.is_file() or not os.access(
+                key_path, os.R_OK
+            ):
                 raise InferenceBackendError(
-                    "Configured server API key file is missing or unreadable."
+                    "Configured server API key file is missing "
+                    "or unreadable."
                 )
 
-            self.api_key = key_path.read_text(encoding="utf-8").strip()
+            self.api_key = key_path.read_text(
+                encoding="utf-8"
+            ).strip()
 
             if not self.api_key:
-                raise InferenceBackendError("Configured server API key file is empty.")
+                raise InferenceBackendError(
+                    "Configured server API key file is empty."
+                )
 
         self.request_timeout = config.server_request_timeout_seconds
 
     def validate_executable(self) -> Path:
         """Validate the configured llama-server executable."""
 
-        executable = Path(self.config.llama_server).expanduser()
+        executable = Path(
+            self.config.llama_server
+        ).expanduser()
 
         if not executable.is_file():
             raise InferenceBackendError(
@@ -74,9 +87,11 @@ class LlamaCppBackend(InferenceBackend):
             )
 
         if not os.access(executable, os.X_OK):
-            raise InferenceBackendError(f"llama-server is not executable: {executable}")
+            raise InferenceBackendError(
+                f"llama-server is not executable: {executable}"
+            )
 
-        return executable
+        return executable.resolve()
 
     @staticmethod
     def validate_model(model_path: str | Path) -> Path:
@@ -85,7 +100,9 @@ class LlamaCppBackend(InferenceBackend):
         model = Path(model_path).expanduser()
 
         if not model.is_file():
-            raise InferenceBackendError(f"Model file not found: {model}")
+            raise InferenceBackendError(
+                f"Model file not found: {model}"
+            )
 
         return model.resolve()
 
@@ -101,13 +118,25 @@ class LlamaCppBackend(InferenceBackend):
         executable = self.validate_executable()
         model = self.validate_model(model_path)
 
-        if gpu_layers < 0:
-            raise ValueError("gpu_layers cannot be negative")
+        if (
+            not isinstance(gpu_layers, int)
+            or isinstance(gpu_layers, bool)
+            or gpu_layers < 0
+        ):
+            raise ValueError(
+                "gpu_layers must be a non-negative integer."
+            )
 
-        selected_port = port if port is not None else self.port
+        selected_port = (
+            port if port is not None else self.port
+        )
 
-        if not 1 <= selected_port <= 65535:
-            raise ValueError("Invalid server port")
+        if (
+            not isinstance(selected_port, int)
+            or isinstance(selected_port, bool)
+            or not 1 <= selected_port <= 65535
+        ):
+            raise ValueError("Invalid server port.")
 
         command = [
             str(executable),
@@ -130,15 +159,17 @@ class LlamaCppBackend(InferenceBackend):
 
         if mmproj_path is not None:
             mmproj = self.validate_model(mmproj_path)
-            command.extend(["--mmproj", str(mmproj)])
+
+            command.extend([
+                "--mmproj",
+                str(mmproj),
+            ])
 
         if self.api_key_file is not None:
-            command.extend(
-                [
-                    "--api-key-file",
-                    str(self.api_key_file),
-                ]
-            )
+            command.extend([
+                "--api-key-file",
+                str(self.api_key_file),
+            ])
 
         return command
 
@@ -151,7 +182,9 @@ class LlamaCppBackend(InferenceBackend):
         }
 
         if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
+            headers["Authorization"] = (
+                f"Bearer {self.api_key}"
+            )
 
         return headers
 
@@ -171,22 +204,33 @@ class LlamaCppBackend(InferenceBackend):
             ) as response:
                 return response.status == 200
 
-        except (HTTPError, URLError, OSError, TimeoutError):
+        except (
+            HTTPError,
+            URLError,
+            OSError,
+            TimeoutError,
+        ):
             return False
 
     def wait_until_ready(self) -> None:
         """Wait for an already-started server to become ready."""
 
-        deadline = time.monotonic() + self.config.server_startup_timeout_seconds
+        deadline = (
+            time.monotonic()
+            + self.config.server_startup_timeout_seconds
+        )
 
         while time.monotonic() < deadline:
             if self.is_ready():
                 return
 
-            time.sleep(self.config.server_health_check_interval_seconds)
+            time.sleep(
+                self.config.server_health_check_interval_seconds
+            )
 
         raise BackendUnavailableError(
-            "llama-server did not become ready before the startup timeout."
+            "llama-server did not become ready before "
+            "the startup timeout."
         )
 
     def generate(
@@ -202,27 +246,58 @@ class LlamaCppBackend(InferenceBackend):
         """Submit an inference request to the persistent server."""
 
         if not isinstance(prompt, str) or not prompt.strip():
-            raise ValueError("prompt cannot be empty")
+            raise ValueError("prompt cannot be empty.")
 
-        if timeout is not None and timeout <= 0:
-            raise ValueError("timeout must be positive")
+        if (
+            not isinstance(max_tokens, int)
+            or isinstance(max_tokens, bool)
+            or max_tokens < 1
+        ):
+            raise ValueError(
+                "max_tokens must be a positive integer."
+            )
+
+        if (
+            not isinstance(temperature, (int, float))
+            or isinstance(temperature, bool)
+            or temperature < 0
+        ):
+            raise ValueError(
+                "temperature cannot be negative."
+            )
+
+        if (
+            not isinstance(top_p, (int, float))
+            or isinstance(top_p, bool)
+            or not 0 < top_p <= 1
+        ):
+            raise ValueError(
+                "top_p must be greater than 0 and at most 1."
+            )
+
+        if timeout is not None and (
+            not isinstance(timeout, (int, float))
+            or isinstance(timeout, bool)
+            or timeout <= 0
+        ):
+            raise ValueError("timeout must be positive.")
+
+        if stop is not None and (
+            isinstance(stop, (str, bytes))
+            or not isinstance(stop, Sequence)
+            or not all(
+                isinstance(item, str) and item
+                for item in stop
+            )
+        ):
+            raise ValueError(
+                "stop must contain non-empty strings."
+            )
 
         if not self.is_ready():
-            raise BackendUnavailableError("llama-server is not ready.")
-
-        if max_tokens < 1:
-            raise ValueError("max_tokens must be positive")
-
-        if temperature < 0:
-            raise ValueError("temperature cannot be negative")
-
-        if not 0 < top_p <= 1:
-            raise ValueError("top_p must be greater than 0 and at most 1")
-
-        if stop is not None and not all(
-            isinstance(item, str) and item for item in stop
-        ):
-            raise ValueError("stop must contain non-empty strings")
+            raise BackendUnavailableError(
+                "llama-server is not ready."
+            )
 
         payload = {
             "prompt": prompt,
@@ -233,7 +308,7 @@ class LlamaCppBackend(InferenceBackend):
         }
 
         if stop:
-            payload["stop"] = stop
+            payload["stop"] = list(stop)
 
         request = Request(
             f"{self.base_url}/completion",
@@ -242,11 +317,20 @@ class LlamaCppBackend(InferenceBackend):
             method="POST",
         )
 
-        request_timeout = timeout if timeout is not None else self.request_timeout
+        request_timeout = (
+            timeout
+            if timeout is not None
+            else self.request_timeout
+        )
 
         try:
-            with urlopen(request, timeout=request_timeout) as response:
-                data = json.loads(response.read().decode("utf-8"))
+            with urlopen(
+                request,
+                timeout=request_timeout,
+            ) as response:
+                data = json.loads(
+                    response.read().decode("utf-8")
+                )
 
         except HTTPError as exc:
             if exc.code in (502, 503, 504):
@@ -259,38 +343,76 @@ class LlamaCppBackend(InferenceBackend):
             ) from exc
 
         except (TimeoutError, socket.timeout) as exc:
-            raise InferenceTimeoutError("Inference request timed out.") from exc
+            raise InferenceTimeoutError(
+                "Inference request timed out."
+            ) from exc
 
         except URLError as exc:
-            if isinstance(exc.reason, (TimeoutError, socket.timeout)):
-                raise InferenceTimeoutError("Inference request timed out.") from exc
+            if isinstance(
+                exc.reason,
+                (TimeoutError, socket.timeout),
+            ):
+                raise InferenceTimeoutError(
+                    "Inference request timed out."
+                ) from exc
 
             raise BackendUnavailableError(
                 "Could not communicate with llama-server."
             ) from exc
 
-        except (OSError, json.JSONDecodeError) as exc:
-            raise InferenceRequestError("Invalid response from llama-server.") from exc
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise InferenceRequestError(
+                "Invalid response from llama-server."
+            ) from exc
 
-        if not isinstance(data, dict) or not isinstance(data.get("content"), str):
-            raise InferenceRequestError("llama-server returned an unexpected response.")
+        if (
+            not isinstance(data, dict)
+            or not isinstance(data.get("content"), str)
+        ):
+            raise InferenceRequestError(
+                "llama-server returned an unexpected response."
+            )
 
         timings = data.get("timings") or {}
+
+        if not isinstance(timings, dict):
+            timings = {}
 
         prompt_ms = timings.get("prompt_ms", 0)
         predicted_ms = timings.get("predicted_ms", 0)
 
         duration = None
 
-        if isinstance(prompt_ms, (int, float)) and isinstance(
-            predicted_ms, (int, float)
+        if (
+            isinstance(prompt_ms, (int, float))
+            and not isinstance(prompt_ms, bool)
+            and isinstance(predicted_ms, (int, float))
+            and not isinstance(predicted_ms, bool)
+            and prompt_ms >= 0
+            and predicted_ms >= 0
         ):
-            duration = (prompt_ms + predicted_ms) / 1000
+            duration = (
+                prompt_ms + predicted_ms
+            ) / 1000
+
+        prompt_tokens = data.get("tokens_evaluated")
+        completion_tokens = data.get("tokens_predicted")
+
+        if not isinstance(prompt_tokens, int):
+            prompt_tokens = None
+
+        if not isinstance(completion_tokens, int):
+            completion_tokens = None
+
+        finish_reason = data.get("stop_type")
+
+        if not isinstance(finish_reason, str):
+            finish_reason = None
 
         return InferenceResult(
             text=data["content"],
-            prompt_tokens=data.get("tokens_evaluated"),
-            completion_tokens=data.get("tokens_predicted"),
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
             total_duration_seconds=duration,
-            finish_reason=data.get("stop_type"),
+            finish_reason=finish_reason,
         )

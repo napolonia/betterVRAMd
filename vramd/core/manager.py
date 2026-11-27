@@ -1,4 +1,6 @@
 
+"""Central application manager for betterVRAMd."""
+
 from enum import Enum
 from typing import Any, Protocol
 
@@ -14,6 +16,11 @@ from vramd.models.selector import ModelLayerSelector
 from vramd.monitor.gpu import GPUMonitor
 from vramd.monitor.system import SystemMonitor
 
+#ARCHITECT detail: the manager currently does not own a dedicated inference execution loop. 
+#   The scheduler can accept and track requests, but it cannot execute them yet. We'll address that separately.
+# Option A: Use llama.cpp's built-in HTTP server
+# Option B: Build our own inference interface
+# Using A, B for future work.
 
 class ManagerState(str, Enum):
     STOPPED = "stopped"
@@ -111,9 +118,24 @@ class VRAMdManager:
                 "Components can only be registered while stopped."
             )
 
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError(
+                "Component name cannot be empty."
+            )
+
         if name in self.components:
             raise ValueError(
                 f"Component already registered: {name}"
+            )
+
+        if not callable(getattr(component, "start", None)):
+            raise TypeError(
+                "Managed component must implement start()."
+            )
+
+        if not callable(getattr(component, "stop", None)):
+            raise TypeError(
+                "Managed component must implement stop()."
             )
 
         self.components[name] = component
@@ -134,6 +156,8 @@ class VRAMdManager:
 
         try:
             for name, component in self.components.items():
+                # Record before starting so a partially initialized
+                # component also receives a cleanup attempt.
                 self._started_components.append(name)
                 component.start()
 
@@ -143,15 +167,20 @@ class VRAMdManager:
             self.last_error = str(error)
             self.state = ManagerState.FAILED
 
-            errors = self._stop_started_components()
+            cleanup_errors = self._stop_started_components()
 
             try:
                 self.lifecycle.shutdown()
             except Exception as cleanup_error:
-                errors.append(f"lifecycle: {cleanup_error}")
+                cleanup_errors.append(
+                    f"lifecycle: {cleanup_error}"
+                )
 
-            if errors:
-                self.last_error += "; cleanup: " + "; ".join(errors)
+            if cleanup_errors:
+                self.last_error += (
+                    "; cleanup: "
+                    + "; ".join(cleanup_errors)
+                )
 
             raise RuntimeError(
                 f"betterVRAMd startup failed: {self.last_error}"
@@ -160,11 +189,22 @@ class VRAMdManager:
     def stop(self) -> None:
         """Stop components and release cached model mappings."""
 
-        if self.state not in (
-            ManagerState.STOPPED,
-            ManagerState.FAILED,
-        ):
-            self.state = ManagerState.STOPPING
+        if self.state == ManagerState.STOPPED:
+            # Still attempt lifecycle cleanup in case resources
+            # were created outside normal manager startup.
+            try:
+                self.lifecycle.shutdown()
+            except Exception as error:
+                self.state = ManagerState.FAILED
+                self.last_error = str(error)
+
+                raise RuntimeError(
+                    f"Shutdown encountered errors: {self.last_error}"
+                ) from error
+
+            return
+
+        self.state = ManagerState.STOPPING
 
         errors = self._stop_started_components()
 
@@ -188,16 +228,22 @@ class VRAMdManager:
         """Stop components in reverse startup order."""
 
         errors = []
+        failed_components = []
 
         for name in reversed(self._started_components):
             component = self.components[name]
 
             try:
                 component.stop()
+
             except Exception as error:
                 errors.append(f"{name}: {error}")
+                failed_components.append(name)
 
-        self._started_components.clear()
+        # Preserve components whose shutdown failed.
+        self._started_components = list(
+            reversed(failed_components)
+        )
 
         return errors
 
@@ -212,17 +258,24 @@ class VRAMdManager:
             "active_components": list(self._started_components),
             "registered_models": len(self.model_registry.models),
             "cached_models": len(self.ram_cache.list_cached()),
+            "active_model": self.lifecycle.active_model,
+            "worker_running": (
+                self.lifecycle.worker.is_running
+                if self.lifecycle.worker is not None
+                else False
+            ),
             "scheduler": self.scheduler.get_status(),
             "last_error": self.last_error,
         }
 
     def get_resource_status(self) -> dict:
         """Collect passive system and GPU measurements."""
+
         if self.state != ManagerState.RUNNING:
             raise RuntimeError(
                 "Resource monitoring requires a running manager."
             )
-        
+
         status = {
             "system": self.system_monitor.get_status(),
             "gpu": None,
