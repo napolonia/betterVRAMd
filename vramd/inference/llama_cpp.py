@@ -6,7 +6,6 @@ an already-running server.
 Process creation and termination are owned by worker/process.py.
 """
 
-from abc import abstractmethod
 import json
 import os
 import socket
@@ -194,7 +193,6 @@ class LlamaCppBackend(InferenceBackend):
             "llama-server did not become ready before the startup timeout."
         )
 
-    @abstractmethod
     def generate(
         self,
         prompt: str,

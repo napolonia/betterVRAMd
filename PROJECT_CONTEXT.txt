@@ -170,85 +170,96 @@ OBSERVE → DECIDE → EXECUTE
 
 Responsibilities:
 
-MONITORS:
+INFERENCE BACKEND ARCHITECTURE
 
+Primary backend: llama.cpp using llama-server.
+
+llama-server provides persistent model residency and
+HTTP-based inference.
+
+The server remains running while its model is resident.
+Multiple inference requests use the same loaded model
+without reloading weights.
+
+Backend responsibilities:
+
+base.py:
+Defines the backend-independent inference interface.
+Defines common result types and exception classes.
+Does not contain llama.cpp-specific implementation.
+
+llama_cpp.py:
+Implements the primary llama-server backend.
+Validates the configured executable and model path.
+Builds the llama-server command.
+Provides HTTP readiness and inference interfaces.
+Does not create or terminate the server process.
+
+llama_cli.py:
+Future optional backend.
+Not part of the initial implementation.
+
+PROCESS OWNERSHIP
+
+worker/process.py owns the llama-server subprocess lifecycle.
+
+Responsibilities:
+- Process creation.
+- Process tracking.
+- Startup readiness monitoring.
+- Graceful shutdown.
+- Forced termination when configured.
+- Runtime port tracking.
+- Failed-start cleanup.
+
+worker/__init__.py:
+Package initializer. Currently empty.
+
+The worker owns the llama-server child process.
+
+The inference backend communicates with the running server
+but does not own its process lifecycle.
+
+LifecycleController coordinates model loading and unloading.
+
+Server termination must release its GPU allocations.
+
+Only one inference worker/server may be active at a time.
+
+RESOURCE OWNERSHIP
+
+MONITORS:
 Read-only system and GPU measurements.
-Never allocate memory.
-Never load models.
+Never allocate memory or load models.
 Never make resource-management decisions.
 
 CORE:
-
 Resource budgeting.
 Scheduling.
 Allocation decisions.
 Lifecycle coordination.
 
 MODEL CACHE:
-
 Memory mapping.
 Optional page warming.
 Cache tracking.
 No indiscriminate memory locking.
 
 WORKER:
-
-Execute inference.
-Own backend resources.
-Remain active while the model is resident.
-Terminate when the model is unloaded or evicted.
-Ensure server termination releases GPU allocations.
+Owns the inference server subprocess.
+Executes inference through the backend.
+Remains active while the model is resident.
+Terminates when the model is unloaded or evicted.
 
 REGISTRY:
-
-Track model identity, location and metadata.
-Never load model weights.
+Tracks model identity, location and metadata.
+Never loads model weights.
 
 MANAGER:
+Coordinates component startup and shutdown.
+Owns component lifecycle.
+Exposes application status.
 
-Coordinate component startup and shutdown.
-Own component lifecycle.
-Expose application status.
-
-INFERENCE BACKEND ARCHITECTURE:
-
-Primary backend: llama.cpp using llama-server.
-
-llama-server provides persistent model residency and HTTP-based inference.
-
-The server remains running while its model is resident.
-Multiple inference requests can use the same loaded model without reloading weights.
-
-
-
-Backend responsibilities:
-
-base.py:
-Define the backend-independent inference interface.
-Define common lifecycle and inference contracts.
-Avoid llama.cpp-specific implementation details.
-
-llama_cpp.py:
-Implement the primary llama-server backend.
-Handle server configuration and command construction.
-Provide HTTP readiness, health and inference interfaces.
-Coordinate server operation with the worker process manager.
-
-llama_cli.py:
-Future optional llama-cli backend.
-Intended for testing, comparison and alternative execution modes.
-Not part of the initial implementation.
-Must implement the common backend interface.
-
-PROCESS OWNERSHIP
-
-worker/process.py owns inference worker process lifecycle.
-The worker owns the llama-server child process.
-The backend does not independently manage the application's overall lifecycle.
-LifecycleController coordinates model loading and unloading.
-
-Server termination must release its GPU allocations.
-Only one inference worker/server may be active at a time.
 
 
 6. EXISTING PROJECT STRUCTURE
@@ -286,6 +297,7 @@ betterVRAMd/
     │   ├── gpu.py
     │   └── system.py
     ├── worker/
+    │   ├── __init__.py
     │   └── process.py
     └── main.py
 Note: Some files were created as empty placeholders. Do not assume they are implemented.
@@ -293,6 +305,7 @@ Note: Some files were created as empty placeholders. Do not assume they are impl
 7. IMPLEMENTATION STATUS
 
 see PROJECT_DEV.txt
+Implementation status does not imply testing or validation.
 
 8. CONFIGURATION
 
@@ -343,6 +356,34 @@ This avoids rewriting the entire project context every time we make progress.
 2. Confirm its implementation status.
 3. Update `PROJECT_DEV.txt`.
 4. Keep `PROJECT_CONTEXT.txt` mostly unchanged unless architecture or environment changes.
+
+
+LLAMA-SERVER CONFIGURATION
+
+Server configuration is defined in VRAMdConfig and
+config/default.toml.
+
+Settings include:
+- Host and port.
+- Dynamic port selection.
+- Startup timeout.
+- Request timeout.
+- Health-check interval.
+- Maximum parallel requests.
+- Optional API key file.
+
+Worker configuration includes:
+- Separate process usage.
+- Shutdown timeout.
+- Forced termination policy.
+- Restart-on-crash policy.
+
+Environment variables with the VRAMD_ prefix override
+TOML configuration.
+
+The worker owns process creation and termination.
+The backend owns HTTP communication.
+LifecycleController owns model lifecycle decisions.
 
 
 9. Component Ownership and Integration

@@ -1,172 +1,259 @@
+
 PROJECT_DEV.txt
 betterVRAMd — Development Status
 
-Phase: 1 — Core infrastructure Status: Implementation in progress Testing: Deferred until architecture implementation is complete
+Phase: 1 — Core infrastructure
+Status: Implementation in progress
+Testing: Deferred until architecture implementation is complete
 
+============================================================
 1. IMPLEMENTED MODULES
+============================================================
 
-All statuses indicate implementation only. Functionality has not yet been validated through testing.
+All statuses indicate implementation only.
+No implementation in this phase has been validated through
+integrated testing unless explicitly stated.
 
-Core
-vramd/core/config.py — TOML configuration and environment overrides.
-vramd/core/manager.py — Central manager, resource monitoring, memory estimation and GPU-layer selection integration.
-vramd/core/budget.py — RAM and VRAM resource budget calculation.
-vramd/core/lifecycle.py — Model lifecycle coordination, metadata inspection, caching and resource-aware configuration selection.
-vramd/core/scheduler.py — Initial inference scheduler.
-Models
-vramd/models/registry.py — GGUF model registration and discovery.
-vramd/models/cache.py — Read-only mmap model cache.
-vramd/models/metadata.py — Full GGUF metadata and tensor inspection.
-vramd/models/estimator.py — Preliminary tensor-level RAM/VRAM estimation, including llama.cpp offload-layer accounting.
-vramd/models/selector.py — Automatic selection of the highest feasible GPU-layer configuration.
-Monitoring and infrastructure
-vramd/monitor/system.py — System resource monitoring.
-vramd/monitor/gpu.py — GPU monitoring.
-vramd/inference/llama_cpp.py — llama.cpp integration structure.
-vramd/worker/process.py — Worker process structure.
-vramd/cli/commands.py — CLI structure.
-vramd/main.py — Application entry point.
-2. ARCHITECTURE DECISIONS
-VRAMdManager owns the main application services.
-LifecycleController receives dependencies through dependency injection.
-Model registration never automatically loads models.
-Application startup must not warm model pages or allocate GPU resources.
-Model caching uses mmap.
-No memory locking by default.
-GGUF inspection uses the Python tooling from the custom llama.cpp installation, installed in the project virtual environment.
-Full tensor inspection is retained for memory estimation.
-GPU-layer selection uses tensor-level estimates rather than proportional layer counts.
-llama.cpp -ngl accounting distinguishes the output layer from transformer blocks.
-Non-layer tensors are conservatively assigned to RAM.
-Memory estimates are preliminary and must not be treated as guaranteed capacity.
-KV cache and inference runtime overhead must be included in future estimation improvements.
-Resource monitoring is passive and does not allocate GPU resources.
-Cache warming respects warm_cache_enabled.
+CORE
 
-See PROJECT_CONTEXT.txt for complete architecture decisions.
+vramd/core/config.py
+Status: Implemented.
+Purpose: TOML configuration and environment overrides.
 
-3. KNOWN IMPLEMENTATION LIMITATIONS
-Estimator output-layer identification requires validation against actual GGUF architectures.
-Tied embeddings and architecture-specific tensor placement require further refinement.
-KV cache and inference runtime overhead are not yet included.
-GPU-layer selection has not been validated against actual llama.cpp loading behavior.
-Metadata extraction requires validation against representative GGUF models.
-Lifecycle and manager integration have not been tested.
-Inference and worker integration remain incomplete.
+vramd/core/manager.py
+Status: Initial implementation.
+
+vramd/core/budget.py
+Status: Implemented.
+Purpose: RAM and VRAM resource budget calculation.
+
+vramd/core/lifecycle.py
+Status: Initial implementation.
+
+vramd/core/scheduler.py
+Status: Initial implementation.
+
+MODELS
+
+vramd/models/registry.py
+Status: Implemented.
+
+vramd/models/cache.py
+Status: Implemented.
+
+vramd/models/metadata.py
+Status: Implemented.
+
+vramd/models/estimator.py
+Status: Implemented.
+
+vramd/models/selector.py
+Status: Implemented.
+
+MONITORING
+
+vramd/monitor/system.py
+Status: Implemented.
+
+vramd/monitor/gpu.py
+Status: Implemented.
+
+INFERENCE
+
+vramd/inference/base.py
+Status: Implemented.
+Purpose: Common inference backend interface.
+
+vramd/inference/llama_cpp.py
+Status: Implemented.
+Purpose: Persistent llama-server HTTP backend and command builder.
+Process creation and termination are not its responsibility.
+
+vramd/inference/llama_cli.py
+Status: Future.
+Purpose: Optional alternative inference backend.
+
+WORKER
+
+vramd/worker/__init__.py
+Status: Empty package initializer.
+
+vramd/worker/process.py
+Status: Implemented.
+Purpose: llama-server subprocess lifecycle management.
+
+CLI AND APPLICATION
+
+vramd/cli/commands.py
+Status: Initial structure.
+
+vramd/main.py
+Status: Initial structure.
+
+CONFIGURATION
+
+config/default.toml
+Status: Implemented.
+Includes llama-server configuration and worker lifecycle settings.
+
+============================================================
+2. INFERENCE ARCHITECTURE
+============================================================
+
+Primary backend: llama-server.
+Future optional backend: llama-cli.
+
+base.py:
+Defines the common backend interface and result types.
+
+llama_cpp.py:
+Builds llama-server commands.
+Validates executable and model paths.
+Communicates with the running server through HTTP.
+Provides readiness checks and inference requests.
+
+worker/process.py:
+Creates and owns the llama-server subprocess.
+Monitors process startup and termination.
+Handles graceful and forced shutdown.
+Tracks the selected server port.
+
+LifecycleController:
+Coordinates model loading and unloading.
+
+InferenceScheduler:
+Coordinates inference request scheduling.
+
+Only one inference worker/server may be active at a time.
+
+============================================================
+3. CONFIGURATION
+============================================================
+
+Configuration is defined through:
+
+vramd/core/config.py
+config/default.toml
+
+TOML_MAPPING connects configuration sections to VRAMdConfig.
+
+Environment variables use the VRAMD_ prefix and override TOML.
+
+llama-server settings include:
+
+- server_host
+- server_port
+- server_dynamic_port
+- server_startup_timeout_seconds
+- server_request_timeout_seconds
+- server_health_check_interval_seconds
+- server_max_parallel_requests
+- server_api_key_file
+
+Worker settings include:
+
+- use_separate_process
+- shutdown_timeout_seconds
+- force_termination
+- restart_on_crash
+
+============================================================
+4. KNOWN IMPLEMENTATION LIMITATIONS
+============================================================
+
+No integrated testing has been performed.
+
+Estimator output-layer identification requires validation.
+Tied embeddings and architecture-specific tensor placement
+require further refinement.
+KV cache and inference runtime overhead are not yet fully
+included in memory estimation.
+GPU-layer selection requires validation against actual
+llama.cpp loading behavior.
+Lifecycle and manager integration remain incomplete.
+Worker and inference backend integration has not yet been
+validated.
+Scheduler integration requires review.
 CLI and application entry point require completion.
-Scheduler behavior requires review.
-4. NEXT DEVELOPMENT ROADMAP
 
-Continue implementation without running tests or inference.
+Worker restart-on-crash policy is not yet implemented.
+Dynamic port selection has not been validated.
+Process lifecycle has not been integration-tested.
 
-Review and refine vramd/inference/llama_cpp.py.
-Review and refine vramd/worker/process.py.
-Review inference request representation and validation.
-Refine InferenceScheduler integration.
-Implement resource-aware model loading decisions.
-Integrate worker process with lifecycle and scheduler.
-Complete llama.cpp backend integration.
-Implement model loading and unloading coordination.
-Complete CLI commands.
-Complete application entry point.
-Implement logging and error handling.
-Review integrated architecture.
-Update documentation.
-Conduct controlled final testing.
+============================================================
+5. DEVELOPMENT ROADMAP
+============================================================
 
-5. TESTING POLICY
+Continue implementation without running inference or tests.
 
-Testing remains deferred until architecture implementation is complete.
+1. Review and finalize worker/process.py.
+2. Review inference request representation and validation.
+3. Refine InferenceScheduler integration.
+4. Integrate WorkerProcess with LifecycleController.
+5. Implement resource-aware model loading decisions.
+6. Complete model loading and unloading coordination.
+7. Complete llama.cpp backend integration.
+8. Implement optional llama-cli backend only if required.
+9. Complete CLI commands.
+10. Complete application entry point.
+11. Implement integrated logging and error handling.
+12. Review the complete architecture.
+13. Update project documentation.
+14. Conduct controlled final testing.
 
-Final testing must be divided into:
+============================================================
+6. TESTING POLICY
+============================================================
 
-Unit tests.
-Integration tests.
-Resource-management tests.
-GPU monitoring tests.
-Controlled inference tests.
+Testing remains deferred until architecture implementation
+is complete.
+
+Final testing must include:
+
+- Unit tests.
+- Integration tests.
+- Resource-management tests.
+- GPU monitoring tests.
+- Controlled inference tests.
 
 Avoid loading large models unnecessarily.
 
-No inference, model loading or GPU allocation during the current implementation phase.
+No inference, model loading or GPU allocation during
+the current implementation phase.
 
-6. NEXT CHAT HANDOVER
+============================================================
+7. NEXT CHAT HANDOVER
+============================================================
 
 Before continuing:
 
-Read PROJECT_CONTEXT.txt.
-Read PROJECT_WORKFLOW.txt.
-Read this file.
-Inspect the actual repository structure.
-Verify current file contents before editing.
-Do not assume previous implementation instructions were successfully applied without checking.
-Preserve existing architecture and working code.
-Immediate next task
+- Read PROJECT_CONTEXT.txt.
+- Read PROJECT_WORKFLOW.txt.
+- Read this file.
+- Check the actual implementation when necessary.
+- Treat user-supplied current file contents as authoritative.
+- Do not assume GitHub reflects the latest local changes.
+- Preserve existing architecture and working code.
 
+IMMEDIATE NEXT TASK:
 
-INFERENCE BACKEND ARCHITECTURE
+Review inference request representation and validation,
+then proceed with scheduler and lifecycle integration.
 
-Agreed architecture:
-Primary: llama-server (persistent inference).
-Future optional backend: llama-cli.
+============================================================
+8. PROJECT ENVIRONMENT
+============================================================
 
-CONFIGURATION UPDATE
-
-llama-server settings are configurable through config/default.toml.
-
-Includes:
-- Host and port
-- Dynamic port allocation
-- Startup timeout
-- Request timeout
-- Health-check interval
-- Maximum parallel requests
-- Optional API authentication File to be used in --api-key-file for llama.cpp
-
-Configuration is loaded through VRAMdConfig and TOML_MAPPING.
-Environment variables take precedence over TOML.
-Server process ownership remains with worker/process.py.
-
-Planned modules:
-
-vramd/inference/base.py
-Status: implemented.
-Purpose: Common backend interface.
-
-vramd/inference/llama_cpp.py
-Status: Not implemented.
-Purpose: Primary llama-server backend.
-
-vramd/inference/llama_cli.py
-Status: Future / not implemented.
-Purpose: Optional CLI backend for testing and alternative execution.
-
-Implementation order:
-
-1. Update project documentation.
-2. Implement base.py.
-3. Implement llama_cpp.py.
-4. Review worker/process.py and integrate persistent server lifecycle.
-5. Implement inference request handling.
-6. Integrate LifecycleController and InferenceScheduler.
-7. Implement llama_cli.py only when required.
-8. Complete remaining application integration.
-9. Conduct controlled testing.
-
-IMPORTANT:
-
-No inference, model loading, GPU allocation or expensive tests during implementation.
-
-Immediate next task:
-
-Implement vramd/inference/base.py.
-
-Then implement vramd/inference/llama_cpp.py.
-
-7. PROJECT ENVIRONMENT
-
-Platform: Linux / WSL2. GPU: NVIDIA GTX 1050, 4 GB VRAM. CUDA architecture: sm_61. Backend: Custom llama.cpp build. llama.cpp build directory: ~/llama.cpp/build-cuda/. GGUF Python tooling: ~/llama.cpp/gguf-py/. GGUF package: Installed in project virtual environment. Development environment: Existing Python virtual environment.
+Platform: Linux / WSL2.
+GPU: NVIDIA GTX 1050, 4 GB VRAM.
+CUDA architecture: sm_61.
+Backend: Custom llama.cpp build.
+llama.cpp build: ~/llama.cpp/build-cuda/
+GGUF tooling: ~/llama.cpp/gguf-py/
+Development environment: Existing Python virtual environment.
 
 Never recreate the virtual environment unnecessarily.
 
-PROJECT: betterVRAMd PHASE: 1 CURRENT MILESTONE: Core infrastructure 
+PROJECT: betterVRAMd
+PHASE: 1
+CURRENT MILESTONE: Core infrastructure

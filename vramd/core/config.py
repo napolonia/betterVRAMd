@@ -79,7 +79,7 @@ class VRAMdConfig(BaseModel):
     # Registry
     registry_enabled: bool = True
     auto_discover: bool = False
-    supported_formats: list[str] = ["gguf"]
+    supported_formats: list[str] = Field(default_factory=lambda: ["gguf"])
 
     # API
     api_enabled: bool = False

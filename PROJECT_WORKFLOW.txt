@@ -1,23 +1,101 @@
+
 PROJECT_WORKFLOW.txt
 betterVRAMd — Development Workflow
+
+============================================================
 1. DEVELOPMENT APPROACH
+============================================================
+
 Implement the architecture before starting testing.
+
 Work on one logical development task at a time.
+
 Avoid unnecessary experiments and temporary implementations.
+
 Keep development incremental and controlled.
-Update documentation after significant architectural decisions.
+
+Update documentation after significant implementation
+or architectural changes.
+
+Prioritize code over lengthy explanations.
+
+============================================================
 2. CODING RULES
-CREATE: Provide the complete new file.
-EDIT: Provide only the specific additions, removals or replacements.
+============================================================
+
+CREATE:
+Provide the complete new file.
+
+EDIT:
+Provide only the specific additions, removals or replacements,
+unless a complete file replacement is explicitly agreed.
+
 Always specify the exact file path.
+
 Preserve existing working code.
+
 Never assume a file's contents without checking.
+
 Never assume code was saved or implemented without confirmation.
+
 Avoid unnecessary dependencies.
+
 Never recreate the existing virtual environment unnecessarily.
-Keep explanations concise.
+
+Keep explanations concise and technical.
+
 Do not repeat unchanged code.
-3. SYSTEM RESOURCE CONSTRAINTS
+
+Prefer implementation over architectural repetition.
+
+============================================================
+3. SOURCE OF TRUTH
+============================================================
+
+User-supplied current file contents are authoritative.
+
+GitHub is a reference, not guaranteed to reflect the latest
+local repository state.
+
+GitHub content may be cached or outdated.
+
+Never repeatedly retrieve a file when its contents appear
+outdated.
+
+When necessary, request the current local file from the user.
+
+A confirmed local change must not be assumed committed
+or pushed.
+
+Never assume a commit or push has occurred without
+user confirmation.
+
+============================================================
+4. COLLABORATION RULES
+============================================================
+
+Work on one file or logical task at a time.
+
+After providing code:
+
+1. Wait for the user to save it.
+2. Confirm the file is saved.
+3. Proceed to the next task.
+
+Do not repeatedly request information already supplied.
+
+Do not repeat completed implementation details.
+
+Keep responses short to minimize unnecessary conversation
+and browser resource consumption.
+
+Prioritize actual code and actionable changes.
+
+Wait for confirmation before moving to the next task.
+
+============================================================
+5. SYSTEM RESOURCE CONSTRAINTS
+============================================================
 
 Development machine:
 
@@ -26,7 +104,8 @@ Platform: Linux / WSL2.
 Backend: Custom llama.cpp build targeting sm_61.
 RAM: 16 GB physical memory.
 
-VS Code, Chrome and other applications run alongside development.
+VS Code, Chrome and other applications run alongside
+development.
 
 Therefore:
 
@@ -36,56 +115,128 @@ Avoid unnecessary RAM and VRAM consumption.
 Never run inference unless explicitly requested.
 Do not perform expensive operations during implementation.
 Avoid actions that could freeze or destabilize the system.
-4. TESTING POLICY
-Testing is deferred until architecture implementation is complete.
+
+============================================================
+6. TESTING POLICY
+============================================================
+
+Testing is deferred until architecture implementation
+is complete.
+
 Do not run tests after every module.
+
 Do not execute inference during implementation.
+
 Final testing must be controlled and resource-conscious.
-Separate unit, integration and GPU/inference testing.
+
+Separate:
+- Unit testing.
+- Integration testing.
+- Resource-management testing.
+- GPU/inference testing.
+
 Test with smaller models before attempting larger models.
-5. ARCHITECTURE RULES
+
+Never describe untested code as verified or production-ready.
+
+============================================================
+7. ARCHITECTURE RULES
+============================================================
+
 Respect decisions documented in PROJECT_CONTEXT.txt.
+
 Track implementation progress in PROJECT_DEV.txt.
+
 Do not duplicate responsibilities between modules.
+
 Prefer dependency injection where appropriate.
+
 Keep model registration separate from model loading.
-Never automatically load or warm models at application startup.
+
+Never automatically load or warm models at application
+startup.
+
 Memory estimates are not guarantees of available capacity.
-Account for KV cache and runtime overhead before actual loading decisions.
+
+Account for KV cache and runtime overhead before actual
+loading decisions.
+
 Preserve compatibility with the custom llama.cpp build.
-6. DOCUMENTATION AND GIT
+
+Maintain strict ownership boundaries:
+
+CORE:
+Resource budgeting, scheduling and lifecycle decisions.
+
+INFERENCE BACKEND:
+Command construction, HTTP communication and inference.
+
+WORKER:
+Subprocess creation, monitoring and termination.
+
+LIFECYCLE CONTROLLER:
+Model loading and unloading coordination.
+
+============================================================
+8. DOCUMENTATION AND GIT
+============================================================
 
 Three documentation files have distinct responsibilities:
 
-PROJECT_CONTEXT.txt — Stable architecture and technical decisions.
-PROJECT_DEV.txt — Current implementation status and roadmap.
-PROJECT_WORKFLOW.txt — Development and collaboration rules.
+PROJECT_CONTEXT.txt:
+Stable architecture, environment and technical decisions.
 
-After significant changes:
+PROJECT_DEV.txt:
+Current implementation status, completed work,
+limitations and next development tasks.
 
-Update the relevant documentation.
-Review the changes.
-Commit and push to GitHub.
+PROJECT_WORKFLOW.txt:
+Development and collaboration rules.
 
-Never mark untested code as verified or production-ready.
+After significant implementation changes:
 
-7. COMMUNICATION PREFERENCES
+1. Update the relevant documentation.
+2. Review consistency across all three files.
+3. Save documentation alongside the code changes.
+
+Git commits and pushes remain under user control.
+Never assume changes have been committed or pushed.
+
+============================================================
+9. COMMUNICATION PREFERENCES
+============================================================
+
 Be concise and technical.
+
 One step at a time.
+
 Avoid lengthy explanations.
+
+Avoid repeating completed work.
+
 Do not ask questions whose answers are already documented.
-Explain important architectural decisions briefly.
-Wait for confirmation before moving to the next task.
-8. NEW CHAT CONTINUITY
+
+Provide actual code whenever implementation is requested.
+
+Prioritize useful context over conversation history.
+
+============================================================
+10. NEW CHAT CONTINUITY
+============================================================
 
 At the beginning of a new chat:
 
-Read all three project documentation files.
-Check the actual repository structure.
-Verify the current implementation before proposing changes.
-Identify the next unfinished task.
-Continue without repeating completed work.
+1. Read all three project documentation files.
+2. Treat GitHub as potentially cached.
+3. Check current local file contents when necessary.
+4. Identify the next unfinished task.
+5. Continue without repeating completed work.
 
-If information is missing, ask only for the specific file or detail needed.
+If information is missing, ask only for the specific
+file or detail needed.
 
-PROJECT: betterVRAMd DEVELOPMENT STYLE: Incremental, resource-conscious, implementation first.
+============================================================
+
+PROJECT: betterVRAMd
+DEVELOPMENT STYLE: Incremental, resource-conscious,
+implementation first.
