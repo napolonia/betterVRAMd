@@ -151,4 +151,4 @@ Platform: Linux / WSL2. GPU: NVIDIA GTX 1050, 4 GB VRAM. CUDA architecture: sm_6
 
 Never recreate the virtual environment unnecessarily.
 
-PROJECT: betterVRAMd PHASE: 1 CURRENT MILESTONE: Core infrastructure NEXT TASK: llama.cpp backend review.
+PROJECT: betterVRAMd PHASE: 1 CURRENT MILESTONE: Core infrastructure 

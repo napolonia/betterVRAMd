@@ -195,7 +195,9 @@ WORKER:
 
 Execute inference.
 Own backend resources.
-Terminate after inference to reclaim GPU allocations.
+Remain active while the model is resident.
+Terminate when the model is unloaded or evicted.
+Ensure server termination releases GPU allocations.
 
 REGISTRY:
 
