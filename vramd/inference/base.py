@@ -1,9 +1,10 @@
 
 """Common inference backend interface."""
 
+import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Sequence
+from collections.abc import Sequence
 
 
 class InferenceBackendError(RuntimeError):
@@ -31,6 +32,52 @@ class InferenceResult:
     completion_tokens: int | None = None
     total_duration_seconds: float | None = None
     finish_reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.text, str):
+            raise TypeError("Result text must be a string.")
+
+        for field_name in (
+            "prompt_tokens",
+            "completion_tokens",
+        ):
+            value = getattr(self, field_name)
+
+            if value is not None:
+                if isinstance(value, bool) or not isinstance(value, int):
+                    raise TypeError(
+                        f"{field_name} must be an integer or None."
+                    )
+
+                if value < 0:
+                    raise ValueError(
+                        f"{field_name} cannot be negative."
+                    )
+
+        duration = self.total_duration_seconds
+
+        if duration is not None:
+            if (
+                isinstance(duration, bool)
+                or not isinstance(duration, (int, float))
+            ):
+                raise TypeError(
+                    "total_duration_seconds must be numeric or None."
+                )
+
+            if not math.isfinite(duration) or duration < 0:
+                raise ValueError(
+                    "total_duration_seconds must be finite "
+                    "and non-negative."
+                )
+
+        if (
+            self.finish_reason is not None
+            and not isinstance(self.finish_reason, str)
+        ):
+            raise TypeError(
+                "finish_reason must be a string or None."
+            )
 
 
 class InferenceBackend(ABC):

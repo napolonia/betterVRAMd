@@ -11,6 +11,7 @@ from vramd.models.metadata import ModelMetadataInspector
 from vramd.models.registry import ModelInfo, ModelRegistry
 from vramd.models.selector import ModelLayerSelector
 from vramd.worker.process import WorkerProcess
+from vramd.inference.base import InferenceBackend
 
 
 class LifecycleController:
@@ -47,7 +48,7 @@ class LifecycleController:
             return self._active_model
 
     @property
-    def backend(self):
+    def backend(self) -> InferenceBackend | None:
         """Return the active inference backend, if available."""
         with self._lock:
             return self.worker.backend if self.worker else None

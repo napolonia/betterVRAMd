@@ -61,7 +61,11 @@ class WorkerProcess:
 
     @staticmethod
     def _find_available_port(host: str) -> int:
-        """Select an available TCP port."""
+        """Find an available port.
+
+        The socket is released before llama-server binds it,
+        so this method cannot guarantee exclusive allocation.
+        """
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.bind((host, 0))
@@ -206,16 +210,53 @@ class WorkerProcess:
                 else:
                     process.kill()
 
+    @staticmethod
+    def _process_group_exists(pgid: int) -> bool:
+        """Return whether a process group still exists."""
+
+        try:
+            os.killpg(pgid, 0)
+            return True
+
+        except ProcessLookupError:
+            return False
+
+        except PermissionError:
+            return True
+
+
+    @classmethod
+    def _wait_for_process_group_exit(
+        cls,
+        process: subprocess.Popen,
+        timeout: float,
+    ) -> bool:
+        """Wait until the process group and its direct child exit."""
+
+        deadline = time.monotonic() + timeout
+
+        while True:
+            # Reap the direct child when it has exited.
+            process.poll()
+
+            if not cls._process_group_exists(process.pid):
+                return True
+
+            remaining = deadline - time.monotonic()
+
+            if remaining <= 0:
+                return False
+
+            time.sleep(min(0.05, remaining))
+
+
+
     def stop(self) -> None:
-        """Gracefully stop the server, escalating to kill if configured."""
+        """Stop the server and verify its entire process group exits."""
 
         process = self._process
 
         if process is None:
-            self._clear_state()
-            return
-
-        if process.poll() is not None:
             self._clear_state()
             return
 
@@ -227,54 +268,61 @@ class WorkerProcess:
         try:
             self._send_signal(process, signal.SIGTERM)
 
-            process.wait(
-                timeout=self.config.shutdown_timeout_seconds
+            stopped = self._wait_for_process_group_exit(
+                process,
+                self.config.shutdown_timeout_seconds,
             )
 
-        except subprocess.TimeoutExpired:
+            if not stopped:
+                if not self.config.force_termination:
+                    raise WorkerShutdownError(
+                        "llama-server process group did not stop "
+                        "within the configured timeout. "
+                        "Process remains tracked."
+                    )
 
-            if not self.config.force_termination:
-                raise WorkerShutdownError(
-                    "llama-server did not stop within the configured "
-                    "timeout. Process remains tracked."
+                logger.warning(
+                    "Graceful shutdown timed out; "
+                    "forcing process-group termination."
                 )
 
-            logger.warning(
-                "Graceful shutdown timed out; forcing termination."
-            )
-
-            try:
                 self._send_signal(process, signal.SIGKILL)
 
-                process.wait(
-                    timeout=self.config.shutdown_timeout_seconds
+                stopped = self._wait_for_process_group_exit(
+                    process,
+                    self.config.shutdown_timeout_seconds,
                 )
 
-            except (subprocess.TimeoutExpired, OSError) as exc:
-                raise WorkerShutdownError(
-                    "Unable to terminate llama-server. "
-                    "Process remains tracked."
-                ) from exc
+                if not stopped:
+                    raise WorkerShutdownError(
+                        "Unable to terminate llama-server process group. "
+                        "Process remains tracked."
+                    )
 
-        except OSError as exc:
+            # Explicitly confirm collection of the direct child.
+            process.wait(timeout=0)
+
+        except WorkerShutdownError:
+            raise
+
+        except (subprocess.TimeoutExpired, OSError) as exc:
             raise WorkerShutdownError(
-                f"Failed to stop llama-server: {exc}"
+                "Failed to completely stop llama-server. "
+                "Process remains tracked."
             ) from exc
 
-        logger.info("llama-server stopped.")
+        logger.info("llama-server process group stopped.")
 
         self._clear_state()
 
+
+
     def _cleanup_failed_start(self) -> None:
-        """Clean up a process left behind by failed startup."""
+        """Clean up the entire process group after failed startup."""
 
         process = self._process
 
         if process is None:
-            self._clear_state()
-            return
-
-        if process.poll() is not None:
             self._clear_state()
             return
 
@@ -286,9 +334,18 @@ class WorkerProcess:
         try:
             self._send_signal(process, signal.SIGKILL)
 
-            process.wait(
-                timeout=self.config.shutdown_timeout_seconds
+            stopped = self._wait_for_process_group_exit(
+                process,
+                self.config.shutdown_timeout_seconds,
             )
+
+            if not stopped:
+                raise WorkerShutdownError(
+                    "Failed to terminate llama-server process group. "
+                    "Process remains tracked."
+                )
+
+            process.wait(timeout=0)
 
         except (subprocess.TimeoutExpired, OSError) as exc:
             logger.exception(
@@ -302,6 +359,7 @@ class WorkerProcess:
             ) from exc
 
         self._clear_state()
+
 
     def _clear_state(self) -> None:
         """Clear references after the process has stopped."""

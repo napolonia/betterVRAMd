@@ -8,6 +8,7 @@ from vramd.core.budget import ResourceBudgetCalculator
 from vramd.core.config import VRAMdConfig, load_config
 from vramd.core.lifecycle import LifecycleController
 from vramd.core.scheduler import InferenceScheduler
+from vramd.core.scheduler import InferenceRequest
 from vramd.models.cache import RAMCacheManager
 from vramd.models.estimator import ModelMemoryEstimator
 from vramd.models.metadata import ModelMetadataInspector
@@ -16,11 +17,9 @@ from vramd.models.selector import ModelLayerSelector
 from vramd.monitor.gpu import GPUMonitor
 from vramd.monitor.system import SystemMonitor
 
-#ARCHITECT detail: the manager currently does not own a dedicated inference execution loop. 
-#   The scheduler can accept and track requests, but it cannot execute them yet. We'll address that separately.
-# Option A: Use llama.cpp's built-in HTTP server
-# Option B: Build our own inference interface
-# Using A, B for future work.
+# Inference execution is coordinated by VRAMDManager.
+# InferenceScheduler manages request state and queue ordering.
+# LifecycleController owns the active worker and backend.
 
 class ManagerState(str, Enum):
     STOPPED = "stopped"
@@ -330,3 +329,81 @@ class VRAMdManager:
         )
 
         return self.memory_estimator.to_dict(estimate)
+
+
+    def load_model(
+        self,
+        name: str,
+        max_gpu_layers: int | None = None,
+    ):
+        """Load a model using a fresh resource budget.
+
+        The lifecycle controller owns model selection, caching, worker
+        startup and cleanup. The manager only coordinates application
+        state and supplies the current resource budget.
+        """
+
+        if self.state != ManagerState.RUNNING:
+            raise RuntimeError(
+                "Model loading requires a running manager."
+            )
+
+        budget = self.get_resource_budget()
+
+        return self.lifecycle.load_model(
+            name=name,
+            budget=budget,
+            max_gpu_layers=max_gpu_layers,
+        )
+
+    def unload_model(self, name: str) -> None:
+        """Unload a model through the lifecycle controller."""
+
+        if self.state != ManagerState.RUNNING:
+            raise RuntimeError(
+                "Model unloading requires a running manager."
+            )
+
+        self.lifecycle.unload_model(name)
+
+    def execute_next(self) -> InferenceRequest | None:
+        """Execute the next queued inference request, if one is available."""
+        if self.state != ManagerState.RUNNING:
+            raise RuntimeError(
+                "VRAMDManager must be running to execute inference."
+            )
+
+        request = self.scheduler.next_request()
+
+        if request is None:
+            return None
+
+        try:
+            if self.lifecycle.active_model != request.model_name:
+                raise RuntimeError(
+                    f"Request requires model '{request.model_name}', "
+                    f"but active model is '{self.lifecycle.active_model}'."
+                )
+
+            backend = self.lifecycle.backend
+
+            if backend is None or not backend.is_ready():
+                raise RuntimeError(
+                    "The active inference backend is unavailable."
+                )
+
+            result = backend.generate(
+                request.prompt,
+                max_tokens=request.max_tokens,
+                temperature=request.temperature,
+                top_p=request.top_p,
+                stop=request.stop,
+                timeout=request.timeout,
+            )
+
+            self.scheduler.complete(request.request_id, result)
+
+        except Exception as exc:
+            self.scheduler.fail(request.request_id, str(exc))
+
+        return self.scheduler.get_request(request.request_id)

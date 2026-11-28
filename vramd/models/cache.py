@@ -21,6 +21,7 @@ class RAMCacheManager:
     def __init__(self):
         self._cache: dict[str, CachedModel] = {}
 
+    
     def load(self, name: str, model_info) -> CachedModel:
         if name in self._cache:
             raise ValueError(f"Model already cached: {name}")
@@ -35,26 +36,33 @@ class RAMCacheManager:
         if size == 0:
             raise ValueError(f"Empty model file: {path}")
 
-        file_handle = os.open(path, "rb")
+        file_handle = os.open(path, os.O_RDONLY)
 
         try:
             mapping = mmap.mmap(
-                file_handle.fileno(),
+                file_handle,
                 length=0,
                 access=mmap.ACCESS_READ,
             )
         finally:
-            file_handle.close()
+            os.close(file_handle)
 
-        cached = CachedModel(
-            name=name,
-            path=path,
-            size_bytes=size,
-            mapping=mapping,
-        )
+        try:
+            cached = CachedModel(
+                name=name,
+                path=path,
+                size_bytes=size,
+                mapping=mapping,
+            )
 
-        self._cache[name] = cached
-        return cached
+            self._cache[name] = cached
+
+            return cached
+
+        except Exception:
+            mapping.close()
+            raise
+
 
     def warm(self, name: str) -> None:
         cached = self.get(name)

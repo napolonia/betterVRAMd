@@ -11,6 +11,7 @@ import json
 import os
 import socket
 import time
+import math
 from collections.abc import Sequence
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -261,6 +262,7 @@ class LlamaCppBackend(InferenceBackend):
         if (
             not isinstance(temperature, (int, float))
             or isinstance(temperature, bool)
+            or not math.isfinite(temperature)
             or temperature < 0
         ):
             raise ValueError(
@@ -270,6 +272,7 @@ class LlamaCppBackend(InferenceBackend):
         if (
             not isinstance(top_p, (int, float))
             or isinstance(top_p, bool)
+            or not math.isfinite(top_p)
             or not 0 < top_p <= 1
         ):
             raise ValueError(
@@ -279,6 +282,7 @@ class LlamaCppBackend(InferenceBackend):
         if timeout is not None and (
             not isinstance(timeout, (int, float))
             or isinstance(timeout, bool)
+            or not math.isfinite(timeout)
             or timeout <= 0
         ):
             raise ValueError("timeout must be positive.")

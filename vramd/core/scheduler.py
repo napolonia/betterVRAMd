@@ -5,6 +5,7 @@ import heapq
 import itertools
 import threading
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Any
@@ -32,6 +33,11 @@ class InferenceRequest:
     finished_at: float | None = None
     error: str | None = None
     result: Any = None
+    max_tokens: int = 512
+    temperature: float = 0.7
+    top_p: float = 0.95
+    stop: tuple[str, ...] | None = None
+    timeout: float | None = None
 
 
 class InferenceScheduler:
@@ -57,6 +63,12 @@ class InferenceScheduler:
         model_name: str,
         prompt: str,
         priority: int = 0,
+        *,
+        max_tokens: int = 512,
+        temperature: float = 0.7,
+        top_p: float = 0.95,
+        stop: Sequence[str] | None = None,
+        timeout: float | None = None,
     ) -> InferenceRequest:
         """Register and enqueue an inference request."""
         with self._lock:
@@ -91,6 +103,20 @@ class InferenceScheduler:
             if queued_count >= self.max_queue_size:
                 raise RuntimeError("Inference queue is full.")
 
+            if stop is not None:
+                if isinstance(stop, (str, bytes)) or not isinstance(stop, Sequence):
+                    raise ValueError("stop must be a sequence of strings.")
+
+                if not all(
+                    isinstance(item, str) and item
+                    for item in stop
+                ):
+                    raise ValueError(
+                        "stop must contain non-empty strings."
+                    )
+
+                stop = tuple(stop)
+
             request_id = next(self._request_ids)
 
             request = InferenceRequest(
@@ -98,6 +124,11 @@ class InferenceScheduler:
                 model_name=model_name,
                 prompt=prompt,
                 priority=priority if self.priority_enabled else 0,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                stop=stop,
+                timeout=timeout,
             )
 
             sequence = next(self._sequence)
@@ -109,7 +140,7 @@ class InferenceScheduler:
 
             self._requests[request_id] = request
 
-            return request
+            return replace(request)
 
     def next_request(self) -> InferenceRequest | None:
         """Retrieve the next queued request for execution."""
@@ -135,14 +166,14 @@ class InferenceScheduler:
                 request.status = RequestStatus.RUNNING
                 request.started_at = time.time()
 
-                return request
+                return replace(request)
 
             return None
 
     def complete(self, request_id: int, result: Any = None) -> None:
         """Mark a running request as completed."""
         with self._lock:
-            request = self.get_request(request_id)
+            request = self._get_request_unlocked(request_id)
             self._require_running(request)
 
             request.result = result
@@ -154,9 +185,12 @@ class InferenceScheduler:
     def fail(self, request_id: int, error: str) -> None:
         """Mark a running request as failed."""
         with self._lock:
-            request = self.get_request(request_id)
+            request = self._get_request_unlocked(request_id)
             self._require_running(request)
 
+            if not isinstance(error, str) or not error.strip():
+                raise ValueError("Error message cannot be empty.")
+            
             request.error = error
             request.status = RequestStatus.FAILED
             request.finished_at = time.time()
@@ -166,7 +200,7 @@ class InferenceScheduler:
     def cancel(self, request_id: int) -> None:
         """Cancel a queued request."""
         with self._lock:
-            request = self.get_request(request_id)
+            request = self._get_request_unlocked(request_id)
 
             if request.status != RequestStatus.QUEUED:
                 raise RuntimeError(
@@ -232,6 +266,9 @@ class InferenceScheduler:
     ) -> InferenceRequest:
         """Retrieve an internal request. Caller must hold _lock."""
 
+        if isinstance(request_id, bool) or not isinstance(request_id, int):
+            raise TypeError("Request ID must be an integer.")
+
         if request_id not in self._requests:
             raise KeyError(f"Unknown request: {request_id}")
 
@@ -253,7 +290,7 @@ class InferenceScheduler:
                 if request.status in terminal_statuses
             ),
             key=lambda request: (
-                request.finished_at,
+                request.finished_at or float("inf"),
                 request.request_id,
             ),
         )
