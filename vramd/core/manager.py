@@ -1,14 +1,13 @@
 
 """Central application manager for betterVRAMd."""
-
+import threading
 from enum import Enum
 from typing import Any, Protocol
 
 from vramd.core.budget import ResourceBudgetCalculator
 from vramd.core.config import VRAMdConfig, load_config
 from vramd.core.lifecycle import LifecycleController
-from vramd.core.scheduler import InferenceScheduler
-from vramd.core.scheduler import InferenceRequest
+from vramd.core.scheduler import InferenceRequest, InferenceScheduler
 from vramd.models.cache import RAMCacheManager
 from vramd.models.estimator import ModelMemoryEstimator
 from vramd.models.metadata import ModelMetadataInspector
@@ -45,6 +44,7 @@ class VRAMdManager:
     def __init__(self, config: VRAMdConfig | None = None):
         self.config = config or load_config()
         self.state = ManagerState.STOPPED
+        self._operation_lock = threading.RLock()
 
         self.components: dict[str, ManagedComponent] = {}
         self._started_components: list[str] = []
@@ -141,87 +141,86 @@ class VRAMdManager:
 
     def start(self) -> None:
         """Start registered application components."""
+        with self._operation_lock:
+            if self.state == ManagerState.RUNNING:
+                return
 
-        if self.state == ManagerState.RUNNING:
-            return
+            if self.state != ManagerState.STOPPED:
+                raise RuntimeError(
+                    f"Cannot start manager in state: {self.state.value}"
+                )
 
-        if self.state != ManagerState.STOPPED:
-            raise RuntimeError(
-                f"Cannot start manager in state: {self.state.value}"
-            )
-
-        self.state = ManagerState.STARTING
-        self.last_error = None
-
-        try:
-            for name, component in self.components.items():
-                # Record before starting so a partially initialized
-                # component also receives a cleanup attempt.
-                self._started_components.append(name)
-                component.start()
-
-            self.state = ManagerState.RUNNING
-
-        except Exception as error:
-            self.last_error = str(error)
-            self.state = ManagerState.FAILED
-
-            cleanup_errors = self._stop_started_components()
+            self.state = ManagerState.STARTING
+            self.last_error = None
 
             try:
-                self.lifecycle.shutdown()
-            except Exception as cleanup_error:
-                cleanup_errors.append(
-                    f"lifecycle: {cleanup_error}"
-                )
+                for name, component in self.components.items():
+                    # Record before starting so a partially initialized
+                    # component also receives a cleanup attempt.
+                    self._started_components.append(name)
+                    component.start()
 
-            if cleanup_errors:
-                self.last_error += (
-                    "; cleanup: "
-                    + "; ".join(cleanup_errors)
-                )
+                self.state = ManagerState.RUNNING
 
-            raise RuntimeError(
-                f"betterVRAMd startup failed: {self.last_error}"
-            ) from error
+            except Exception as error:
+                self.last_error = str(error)
+                self.state = ManagerState.FAILED
+
+                cleanup_errors = self._stop_started_components()
+
+                try:
+                    self.lifecycle.shutdown()
+                except Exception as cleanup_error:
+                    cleanup_errors.append(
+                        f"lifecycle: {cleanup_error}"
+                    )
+
+                if cleanup_errors:
+                    self.last_error += (
+                        "; cleanup: "
+                        + "; ".join(cleanup_errors)
+                    )
+
+                raise RuntimeError(
+                    f"betterVRAMd startup failed: {self.last_error}"
+                ) from error
 
     def stop(self) -> None:
         """Stop components and release cached model mappings."""
 
-        if self.state == ManagerState.STOPPED:
-            # Still attempt lifecycle cleanup in case resources
-            # were created outside normal manager startup.
+        with self._operation_lock:
+            if self.state == ManagerState.STOPPED:
+                try:
+                    self.lifecycle.shutdown()
+                except Exception as error:
+                    self.state = ManagerState.FAILED
+                    self.last_error = str(error)
+
+                    raise RuntimeError(
+                        f"Shutdown encountered errors: {self.last_error}"
+                    ) from error
+
+                return
+
+            self.state = ManagerState.STOPPING
+
+            errors = self._stop_started_components()
+
             try:
                 self.lifecycle.shutdown()
             except Exception as error:
+                errors.append(f"lifecycle: {error}")
+
+            if errors:
                 self.state = ManagerState.FAILED
-                self.last_error = str(error)
+                self.last_error = "; ".join(errors)
 
                 raise RuntimeError(
                     f"Shutdown encountered errors: {self.last_error}"
-                ) from error
+                )
 
-            return
-
-        self.state = ManagerState.STOPPING
-
-        errors = self._stop_started_components()
-
-        try:
-            self.lifecycle.shutdown()
-        except Exception as error:
-            errors.append(f"lifecycle: {error}")
-
-        if errors:
-            self.state = ManagerState.FAILED
-            self.last_error = "; ".join(errors)
-
-            raise RuntimeError(
-                f"Shutdown encountered errors: {self.last_error}"
-            )
-
-        self.state = ManagerState.STOPPED
-        self.last_error = None
+            self.state = ManagerState.STOPPED
+            self.last_error = None
 
     def _stop_started_components(self) -> list[str]:
         """Stop components in reverse startup order."""
@@ -336,74 +335,73 @@ class VRAMdManager:
         name: str,
         max_gpu_layers: int | None = None,
     ):
-        """Load a model using a fresh resource budget.
+        """Load a model using a fresh resource budget."""
 
-        The lifecycle controller owns model selection, caching, worker
-        startup and cleanup. The manager only coordinates application
-        state and supplies the current resource budget.
-        """
+        with self._operation_lock:
+            if self.state != ManagerState.RUNNING:
+                raise RuntimeError(
+                    "Model loading requires a running manager."
+                )
 
-        if self.state != ManagerState.RUNNING:
-            raise RuntimeError(
-                "Model loading requires a running manager."
+            budget = self.get_resource_budget()
+
+            return self.lifecycle.load_model(
+                name=name,
+                budget=budget,
+                max_gpu_layers=max_gpu_layers,
             )
-
-        budget = self.get_resource_budget()
-
-        return self.lifecycle.load_model(
-            name=name,
-            budget=budget,
-            max_gpu_layers=max_gpu_layers,
-        )
 
     def unload_model(self, name: str) -> None:
         """Unload a model through the lifecycle controller."""
 
-        if self.state != ManagerState.RUNNING:
-            raise RuntimeError(
-                "Model unloading requires a running manager."
-            )
+        with self._operation_lock:
+            if self.state != ManagerState.RUNNING:
+                raise RuntimeError(
+                    "Model unloading requires a running manager."
+                )
 
-        self.lifecycle.unload_model(name)
+            self.lifecycle.unload_model(name)
 
     def execute_next(self) -> InferenceRequest | None:
         """Execute the next queued inference request, if one is available."""
-        if self.state != ManagerState.RUNNING:
-            raise RuntimeError(
-                "VRAMDManager must be running to execute inference."
-            )
 
-        request = self.scheduler.next_request()
-
-        if request is None:
-            return None
-
-        try:
-            if self.lifecycle.active_model != request.model_name:
+        with self._operation_lock:
+            if self.state != ManagerState.RUNNING:
                 raise RuntimeError(
-                    f"Request requires model '{request.model_name}', "
-                    f"but active model is '{self.lifecycle.active_model}'."
+                    "VRAMDManager must be running to execute inference."
                 )
 
-            backend = self.lifecycle.backend
+            request = self.scheduler.next_request()
 
-            if backend is None or not backend.is_ready():
-                raise RuntimeError(
-                    "The active inference backend is unavailable."
+            if request is None:
+                return None
+
+            try:
+                active_model = self.lifecycle.active_model
+
+                if active_model != request.model_name:
+                    raise RuntimeError(
+                        f"Request requires model '{request.model_name}', "
+                        f"but active model is '{active_model}'."
+                    )
+
+                backend = self.lifecycle.backend
+
+                if backend is None or not backend.is_ready():
+                    raise RuntimeError(
+                        "The active inference backend is unavailable."
+                    )
+
+                result = backend.generate(
+                    request.prompt,
+                    max_tokens=request.max_tokens,
+                    temperature=request.temperature,
+                    top_p=request.top_p,
+                    stop=request.stop,
+                    timeout=request.timeout,
                 )
 
-            result = backend.generate(
-                request.prompt,
-                max_tokens=request.max_tokens,
-                temperature=request.temperature,
-                top_p=request.top_p,
-                stop=request.stop,
-                timeout=request.timeout,
-            )
+                return self.scheduler.complete(request.request_id, result)
 
-            self.scheduler.complete(request.request_id, result)
-
-        except Exception as exc:
-            self.scheduler.fail(request.request_id, str(exc))
-
-        return self.scheduler.get_request(request.request_id)
+            except Exception as exc:
+                return self.scheduler.fail(request.request_id, str(exc))

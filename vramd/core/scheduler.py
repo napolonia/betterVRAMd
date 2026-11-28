@@ -5,6 +5,9 @@ import heapq
 import itertools
 import threading
 import time
+import copy
+import math 
+
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from enum import Enum
@@ -83,6 +86,43 @@ class InferenceScheduler:
 
             if not isinstance(priority, int) or isinstance(priority, bool):
                 raise TypeError("Priority must be an integer.")
+
+            if (
+                not isinstance(max_tokens, int)
+                or isinstance(max_tokens, bool)
+                or max_tokens <= 0
+            ):
+                raise ValueError("max_tokens must be a positive integer.")
+
+            if (
+                not isinstance(temperature, (int, float))
+                or isinstance(temperature, bool)
+                or not math.isfinite(temperature)
+                or temperature < 0
+            ):
+                raise ValueError(
+                    "temperature must be a finite number >= 0."
+                )
+
+            if (
+                not isinstance(top_p, (int, float))
+                or isinstance(top_p, bool)
+                or not math.isfinite(top_p)
+                or not 0 < top_p <= 1
+            ):
+                raise ValueError(
+                    "top_p must be a finite number in the range (0, 1]."
+                )
+
+            if timeout is not None and (
+                not isinstance(timeout, (int, float))
+                or isinstance(timeout, bool)
+                or not math.isfinite(timeout)
+                or timeout <= 0
+            ):
+                raise ValueError(
+                    "timeout must be None or a finite number > 0."
+                )
 
             queued_count = sum(
                 request.status == RequestStatus.QUEUED
@@ -170,8 +210,10 @@ class InferenceScheduler:
 
             return None
 
-    def complete(self, request_id: int, result: Any = None) -> None:
-        """Mark a running request as completed."""
+    def complete(
+        self, request_id: int, result: Any = None
+    ) -> InferenceRequest:
+        """Mark a running request as completed and return its snapshot."""
         with self._lock:
             request = self._get_request_unlocked(request_id)
             self._require_running(request)
@@ -180,23 +222,30 @@ class InferenceScheduler:
             request.status = RequestStatus.COMPLETED
             request.finished_at = time.time()
 
+            completed_request = copy.copy(request)
             self._prune_history()
 
-    def fail(self, request_id: int, error: str) -> None:
-        """Mark a running request as failed."""
+            return completed_request
+
+
+    def fail(self, request_id: int, error: str) -> InferenceRequest:
+        """Mark a running request as failed and return its snapshot."""
         with self._lock:
             request = self._get_request_unlocked(request_id)
             self._require_running(request)
 
             if not isinstance(error, str) or not error.strip():
                 raise ValueError("Error message cannot be empty.")
-            
+
             request.error = error
             request.status = RequestStatus.FAILED
             request.finished_at = time.time()
-            
+
+            failed_request = copy.copy(request)
             self._prune_history()
 
+            return failed_request
+        
     def cancel(self, request_id: int) -> None:
         """Cancel a queued request."""
         with self._lock:

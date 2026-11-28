@@ -74,9 +74,10 @@ Read TOML configuration.
 Apply environment variable overrides.
 Provide configuration through VRAMDConfig.
 
+
 MODULE: vramd/core/manager.py
 
-Status : IMPLEMENTATION ADVANCED — REVIEW REQUIRED — UNTESTED
+Status : IMPLEMENTATION ADVANCED — REVIEWED AREAS UPDATED — UNTESTED
 
 Purpose: Central application coordinator.
 
@@ -98,25 +99,36 @@ Delegates lifecycle status reporting to LifecycleController.
 Obtains a fresh ResourceBudget before model loading.
 Delegates model loading to LifecycleController.
 Delegates model unloading to LifecycleController.
-Contains an initial execute_next() implementation for scheduler
-and backend execution coordination.
+Coordinates scheduler requests with backend execution through execute_next().
+Validates manager running state before request execution.
+Checks requested model identity against the active model.
+Checks backend availability and readiness.
+Records request completion or failure through InferenceScheduler.
+Uses a manager-level threading.RLock to serialize start, stop,
+load_model, unload_model and execute_next operations.
+
+Reviewed integration details:
+
+LifecycleController exposes active_model.
+LifecycleController exposes the active backend.
+Manager execution uses these interfaces.
+Completion and failure return request snapshots.
+Manager execution no longer depends on retrieving a request
+after scheduler history pruning.
 
 Outstanding:
 
-Review execute_next() state validation.
-Verify the LifecycleController active-model interface.
-Verify the LifecycleController active-backend interface.
-Review request/model identity handling.
-Review execution failure handling.
-Review scheduler completion and failure integration.
-Review manager and lifecycle integration as a whole.
+Review remaining manager/lifecycle failure-state interactions.
+Review scheduler dispatch and request-state edge cases.
+Complete broader architecture review.
 
 IMPORTANT:
 
-The presence of execute_next() does not establish that inference
-execution integration is complete or verified.
+These changes are saved locally but remain untested.
+The manager lock serializes operations made through VRAMDManager.
+It does not protect direct LifecycleController calls made outside
+the manager.
 
-All current changes remain untested.
 
 MODULE: vramd/core/lifecycle.py
 
@@ -154,15 +166,14 @@ Cache mappings created before a loading attempt are preserved when that attempt 
 Cache cleanup failures are reported rather than silently discarded.
 Existing worker references are checked before new loading.
 
+
 Outstanding:
 
-Complete manager-level loading orchestration.
-Complete manager-level unloading orchestration.
-Review all failure-state transitions.
+Review remaining manager/lifecycle failure-state interactions.
 Complete GPU memory reclamation verification.
 Review multimodal memory estimation and residency.
-Complete scheduler integration.
-Final lifecycle architecture review.
+Complete broader lifecycle and architecture validation.
+
 
 IMPORTANT:
 
@@ -172,9 +183,10 @@ It does not own subprocess creation or termination.
 
 WorkerProcess exclusively owns the llama-server subprocess.
 
+
 MODULE: vramd/core/scheduler.py
 
-Status : REVIEWED — IMPLEMENTATION IMPROVEMENTS SAVED UNTESTED
+Status : REVIEWED AREAS UPDATED — IMPLEMENTATION IMPROVEMENTS SAVED — UNTESTED
 
 Purpose: Inference request scheduling, priority ordering and queue management.
 
@@ -195,24 +207,30 @@ Shallow-copy snapshots through get_request() and list_requests().
 Internal request retrieval through _get_request_unlocked().
 Scheduler statistics through get_status().
 Priority type validation.
-Inference generation parameters stored with each request.
-Validation of max_tokens, temperature, top_p, stop and timeout
-parameters at request submission.
-Stop sequences normalized to immutable tuples.
+Generation parameter storage and validation.
+Validation of max_tokens, temperature, top_p and timeout.
+Stop sequence validation and normalization into immutable tuples.
+
+Recent corrections:
+
+complete() and fail() return shallow copies of terminal requests
+before history pruning.
+This allows VRAMDManager.execute_next() to return the request result
+even when scheduler_history_limit is zero.
+A zero history limit therefore removes terminal requests from
+scheduler storage without preventing the caller from receiving
+the completed or failed request.
 
 Known limitations:
 
-Known limitations:
-
-next_request() requires final encapsulation review.
 Mutable nested fields such as result remain shared references
 in shallow copies.
-Scheduler execution is coordinated externally by VRAMdManager.
-LifecycleController integration requires final interface review.
-Backend dispatch requires final review.
-Model registration validation is not fully integrated.
+Scheduler execution is coordinated externally by VRAMDManager.
+The complete scheduler dispatch path has not been tested.
+Direct InferenceRequest construction can bypass submit() validation.
 
 All changes are saved locally but remain untested.
+
 
 01.2 MODELS
 
@@ -551,22 +569,31 @@ CPU-only fallback behaviour requires validation.
 
 04.3 LIFECYCLE AND MANAGER INTEGRATION
 
-Manager implementation:
+Implemented:
 
-Resource-budget acquisition before model loading is implemented.
-Manager-level model loading delegation is implemented.
-Manager-level model unloading delegation is implemented.
-Initial scheduler execution coordination is present in execute_next().
+Resource-budget acquisition before model loading.
+Manager-level model loading delegation.
+Manager-level model unloading delegation.
+LifecycleController active-model interface.
+LifecycleController active-backend interface.
+Initial scheduler execution coordination.
+Manager running-state validation.
+Request/model identity checking.
+Backend readiness checking.
+Manager-level operation serialization using threading.RLock.
+Scheduler completion and failure snapshot integration.
+Zero-history-limit execution result handling.
 
 Outstanding:
 
-Review execute_next() and correct any interface mismatches.
-Verify LifecycleController active-model access.
-Verify LifecycleController active-backend access.
-Review request/model identity handling.
-Complete manager and scheduler integration review.
+Review remaining lifecycle and manager failure-state interactions.
+Review scheduler dispatch edge cases.
 Complete GPU memory reclamation verification.
 Complete multimodal memory estimation.
+Complete broader integration review.
+
+All changes remain untested.
+
 
 04.4 WORKER AND BACKEND INTEGRATION
 
@@ -601,17 +628,16 @@ Stale queue-entry handling.
 Public request snapshots.
 Internal request retrieval helper.
 Priority validation.
-Inference generation parameters are stored in requests.
-Generation parameter validation is performed during submission.
-Stop sequences are stored as tuples.
+Generation parameter storage and validation.
+Stop sequence validation and tuple normalization.
+Completion and failure snapshots.
+Correct handling of scheduler_history_limit=0.
 
 Outstanding:
 
-Review manager execute_next() integration.
-Verify active backend access through LifecycleController.
-Verify model identity checks.
-Review backend dispatch and result handling.
-Review completion and failure handling across the execution path.
+Review remaining scheduler dispatch and state-transition edge cases.
+Review mutable nested result references.
+Complete broader execution-path validation.
 
 Testing remains deferred.
 
@@ -631,54 +657,68 @@ Application-wide logging requires integration.
 
 Development must continue without running inference or integrated tests during the current implementation phase.
 
+
 05.1 DEVELOPMENT TASKS
 
-[01] Review and finalize worker/process.py. [COMPLETE — REVIEWED, SAVED, UNTESTED]
+[01] Review and finalize worker/process.py.
+     [COMPLETE — REVIEWED, SAVED, UNTESTED]
 
-[02] Review inference request representation and validation. [COMPLETE — REVIEWED, SAVED, UNTESTED]
+[02] Review inference request representation and validation.
+     [COMPLETE — REVIEWED, SAVED, UNTESTED]
 
-[03] Refine scheduler and manager execution integration. [PARTIAL — INITIAL execute_next() IMPLEMENTATION PRESENT]
+[03] Refine scheduler and manager execution integration.
+     [IMPLEMENTATION IMPROVEMENTS SAVED — UNTESTED]
 
-[04] Integrate WorkerProcess with LifecycleController. [COMPLETE — IMPLEMENTED, UNTESTED]
+[04] Integrate WorkerProcess with LifecycleController.
+     [COMPLETE — IMPLEMENTED, UNTESTED]
 
-[05] Implement resource-aware model loading decisions. [COMPLETE AT LIFECYCLE LEVEL — UNTESTED]
+[05] Implement resource-aware model loading decisions.
+     [COMPLETE AT LIFECYCLE LEVEL — UNTESTED]
 
 [06] Complete model loading, unloading and execution coordination.
-     [MODEL LOADING/UNLOADING IMPLEMENTED AT MANAGER LEVEL;
-      EXECUTION INTEGRATION REQUIRES REVIEW]
+     [LOADING/UNLOADING IMPLEMENTED AT MANAGER LEVEL;
+      INITIAL EXECUTION COORDINATION IMPLEMENTED]
 
-[07] Complete llama.cpp backend integration. [PARTIAL — IMPLEMENTED, REQUIRES VALIDATION]
+[07] Complete llama.cpp backend integration.
+     [IMPLEMENTED — REQUIRES VALIDATION]
 
-[08] Implement optional llama-cli backend only if required. [FUTURE]
+[08] Implement optional llama-cli backend only if required.
+     [FUTURE]
 
-[09] Complete CLI commands. [NOT STARTED]
+[09] Complete CLI commands.
+     [NOT STARTED]
 
-[10] Complete application entry point. [INITIAL STRUCTURE]
+[10] Complete application entry point.
+     [INITIAL STRUCTURE]
 
-[11] Implement integrated logging and error handling. [PARTIAL]
+[11] Implement integrated error handling and logging.
+     [PARTIAL]
 
-[12] Review the complete architecture. [OUTSTANDING]
+[12] Review the complete architecture.
+     [OUTSTANDING]
 
-[13] Update project documentation. [IN PROGRESS]
+[13] Update project documentation.
+     [IN PROGRESS]
 
-[14] Conduct controlled final testing. [DEFERRED]
+[14] Conduct controlled final testing.
+     [DEFERRED]
+
 
 05.2 DEVELOPMENT PRIORITIES
 
-Priority 1: Review and finalize manager/lifecycle interfaces.
+Priority 1: Review remaining scheduler dispatch and state-transition
+           edge cases.
 
-Priority 2: Review manager execute_next() and scheduler execution
-           coordination.
+Priority 2: Review remaining manager/lifecycle failure-state interactions.
 
-Priority 3: Finalize LifecycleController failure handling and cleanup.
+Priority 3: Complete CLI and application startup/shutdown.
 
-Priority 4: Complete CLI and application startup/shutdown.
+Priority 4: Implement integrated error handling and logging.
 
-Priority 5: Implement integrated error handling and logging.
+Priority 5: Complete architecture review.
 
-Priority 6: Complete architecture review.
+Priority 6: Prepare controlled final testing.
 
-Priority 7: Prepare controlled final testing.
 
 =============================================================================== TESTING POLICY
 
@@ -746,121 +786,58 @@ Phase: 1 - Core Infrastructure Implementation
 1. CURRENT DEVELOPMENT POSITION
 -------------------------------------------------------------------------------
 
-Development is proceeding through individual file reviews and small,
-controlled implementation changes.
+Development is proceeding through individual file reviews and controlled
+implementation changes.
 
-LATEST REVIEWED COMPONENTS
---------------------------
+Recently reviewed and updated:
 
-  [01] vramd/core/scheduler.py
-  [02] vramd/core/manager.py
+  [01] vramd/core/manager.py
+  [02] vramd/core/scheduler.py
   [03] vramd/core/lifecycle.py
   [04] vramd/worker/process.py
   [05] vramd/inference/llama_cpp.py
-  [06] vramd/models/selector.py
-  [07] vramd/models/estimator.py
-  [08] vramd/core/budget.py
-  [09] vramd/models/cache.py
-  [10] vramd/models/registry.py
-  [11] vramd/models/metadata.py
-  [12] vramd/core/config.py
+  [06] vramd/core/config.py
 
-
--------------------------------------------------------------------------------
 2. LATEST IMPLEMENTATION POSITION
 -------------------------------------------------------------------------------
-
-LIFECYCLE CONTROLLER
---------------------
-
-  [DONE] Resource-aware model loading.
-  [DONE] Worker startup and shutdown coordination.
-  [DONE] Model residency and lifecycle status reporting.
-  [DONE] Failed-start cleanup and worker tracking protections.
-
 
 MANAGER
 -------
 
-  [DONE] Owns RAMCacheManager and LifecycleController.
-  [DONE] Owns InferenceScheduler.
-  [DONE] Delegates lifecycle status reporting to LifecycleController.
-  [DONE] Obtains ResourceBudget before model loading.
-  [DONE] Delegates model loading to LifecycleController.
-  [DONE] Delegates model unloading to LifecycleController.
-  [PARTIAL] Initial execute_next() implementation.
-
-  [REVIEW REQUIRED]
-      - Manager state validation.
-      - Active-model interface.
-      - Active-backend interface.
-      - Scheduler execution coordination.
-
+  [DONE] Manager state validation in execute_next().
+  [DONE] Active-model interface verification.
+  [DONE] Active-backend interface verification.
+  [DONE] Request/model identity checking.
+  [DONE] Backend readiness checking.
+  [DONE] Completion and failure integration.
+  [DONE] Manager operation serialization using RLock.
+  [SAVED] Changes remain untested.
 
 SCHEDULER
 ---------
 
   [DONE] Thread-safety improvements.
   [DONE] History-management improvements.
-  [DONE] Generation parameter storage and validation.
-  [REVIEW REQUIRED] Request encapsulation.
-  [REVIEW REQUIRED] Manager execution integration.
+  [DONE] Zero-history-limit result handling.
+  [DONE] Generation parameter validation.
+  [DONE] Stop sequence validation and normalization.
+  [DONE] Completion and failure request snapshots.
+  [SAVED] Changes remain untested.
 
-
-WORKER PROCESS
---------------
-
-  [REVIEWED] Subprocess lifecycle implementation.
-  [REVIEWED] Startup and readiness handling.
-  [REVIEWED] Shutdown handling.
-  [REVIEWED] Failed-start cleanup.
-  [REVIEWED] Process tracking protections.
-
-
-TESTING STATUS
---------------
-
-  All current changes remain untested.
-  No inference execution has been performed.
-
-
--------------------------------------------------------------------------------
 3. CURRENT DEVELOPMENT TASK
 -------------------------------------------------------------------------------
 
-TASK: Review and finalize manager/lifecycle execution integration.
+TASK: Continue core infrastructure implementation.
 
+The initial manager/scheduler integration review and the identified
+corrections have been completed and saved.
 
-IMMEDIATE ACTIONS
------------------
+Do not reopen completed review items without a specific new issue,
+interface discrepancy or test finding.
 
-  [01] Review the current VRAMDManager implementation.
-
-  [02] Correct the execute_next() manager-state check.
-
-       Current issue:
-           execute_next() references self._state.
-
-       Expected attribute:
-           self.state
-
-  [03] Verify that LifecycleController exposes the active model identity.
-
-  [04] Verify that LifecycleController provides safe access to the
-       active inference backend.
-
-  [05] Review request/model identity validation.
-
-  [06] Review scheduler completion and failure handling.
-
-  [07] Preserve single-request execution constraints.
-
-  [08] Preserve single-active-model constraints.
-
-  [09] Ensure backend access does not bypass LifecycleController.
-
-  [10] Update project documentation after interface review.
-
+The next development task should address remaining scheduler
+dispatch and state-transition edge cases, using the current local
+source as authoritative.
 
 -------------------------------------------------------------------------------
 4. ARCHITECTURE AND OWNERSHIP DECISIONS
@@ -978,15 +955,14 @@ IMMEDIATE ACTIONS
 8. NEXT DEVELOPMENT STEP
 -------------------------------------------------------------------------------
 
-  Begin with the current source of:
+Continue with the next outstanding implementation priority in
+PROJECT_DEV.txt.
 
-      vramd/core/lifecycle.py
+Start by reviewing the relevant current local source.
 
-  Verify the active-model and active-backend interfaces before making
-  further changes to execute_next().
+Do not repeat the completed manager/lifecycle interface review.
 
-  Do not assume that the interfaces referenced by VRAMDManager already
-  exist or behave as expected.
+Do not assume an interface exists without reviewing its source.
 
 
 -------------------------------------------------------------------------------
@@ -1094,6 +1070,6 @@ The current testing restrictions remain in effect until the appropriate developm
 
 Project : betterVRAMd Development Phase: 1 - Core Infrastructure Current Status : Implementation In Progress Current Milestone: Core Infrastructure
 
-Immediate Task : Complete Model Loading and Unloading Coordination
+Immediate Task : Review Remaining Scheduler Dispatch and State-Transition Edge Cases
 
 =============================================================================== END OF PROJECT DEVELOPMENT STATUS
