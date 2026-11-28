@@ -249,6 +249,7 @@ class VRAMdManager:
 
     def get_status(self) -> dict[str, Any]:
         """Return a snapshot of manager state."""
+        lifecycle_status = self.lifecycle.get_status()
 
         return {
             "application": self.config.app_name,
@@ -257,13 +258,9 @@ class VRAMdManager:
             "registered_components": list(self.components.keys()),
             "active_components": list(self._started_components),
             "registered_models": len(self.model_registry.models),
-            "cached_models": len(self.ram_cache.list_cached()),
-            "active_model": self.lifecycle.active_model,
-            "worker_running": (
-                self.lifecycle.worker.is_running
-                if self.lifecycle.worker is not None
-                else False
-            ),
+            "cached_models": lifecycle_status["cached_models"],
+            "active_model": lifecycle_status["active_model"],
+            "worker_running": lifecycle_status["worker_running"],
             "scheduler": self.scheduler.get_status(),
             "last_error": self.last_error,
         }

@@ -998,70 +998,135 @@ COMPONENT OWNERSHIP AND INTEGRATION
 
 Module:
 
- vramd/core/manager.py
-
+vramd/core/manager.py
 
 VRAMdManager is the central application coordinator.
 
 It owns:
 
- - ModelRegistry.
- - RAMCacheManager.
- - ModelMetadataInspector.
- - ModelMemoryEstimator.
- - ModelLayerSelector.
- - LifecycleController.
- - InferenceScheduler.
- - SystemMonitor.
- - GPUMonitor, when GPU monitoring is enabled.
- - ResourceBudgetCalculator.
-
+ModelRegistry.
+RAMCacheManager.
+ModelMetadataInspector.
+ModelMemoryEstimator.
+ModelLayerSelector.
+LifecycleController.
+InferenceScheduler.
+SystemMonitor.
+GPUMonitor, when GPU monitoring is enabled.
+ResourceBudgetCalculator.
 
 Responsibilities:
 
- - Component construction.
- - Dependency injection.
- - Application startup and shutdown.
- - Resource-management coordination.
- - Application status reporting.
- - Coordination between model lifecycle and inference scheduling.
-
+Component construction and dependency injection.
+Application startup and shutdown.
+Resource measurement and budget calculation.
+Resource-aware model loading coordination.
+Application status reporting.
+Coordination between model lifecycle and inference scheduling.
 
 VRAMdManager creates and owns ModelRegistry and RAMCacheManager.
 
-It passes references to both into LifecycleController.
+It injects references to both into LifecycleController.
 
-LifecycleController must not recreate these dependencies.
+VRAMdManager remains responsible for application-level orchestration. It must not duplicate lifecycle operations already owned by LifecycleController.
+
+Model loading decisions must use current resource measurements and a ResourceBudget before delegating model startup to LifecycleController.
+
+Manager status reporting must obtain lifecycle information through LifecycleController.get_status(), rather than independently accessing lifecycle internal state.
+
+The manager owns InferenceScheduler directly. Scheduler execution and backend dispatch remain separate integration work.
 
 12.2 LIFECYCLE CONTROLLER
 
 Module:
 
- vramd/core/lifecycle.py
+vramd/core/lifecycle.py
 
+Receives dependencies through injection:
 
-Receives:
-
- - ModelRegistry.
- - RAMCacheManager.
- - ModelMetadataInspector.
- - ModelLayerSelector.
- - VRAMdConfig.
-
+ModelRegistry.
+RAMCacheManager.
+ModelMetadataInspector.
+ModelLayerSelector.
+VRAMDConfig.
 
 Responsibilities:
 
- - Model registration and unregistration.
- - Metadata inspection.
- - Configuration selection.
- - Cache loading and unloading.
- - Model state reporting.
- - Cache cleanup.
+Model registration and unregistration.
+Read-only model metadata inspection.
+Model configuration selection.
+Resource-aware model loading coordination.
+RAM cache loading and unloading.
+Worker startup and shutdown coordination.
+Single-active-model enforcement.
+Model lifecycle state reporting.
+Cache cleanup.
+Startup failure handling.
 
+RESOURCE-AWARE LOADING
 
-It coordinates model lifecycle decisions.
+The loading operation requires a ResourceBudget supplied by the caller.
 
-It does not directly create inference subprocesses.
+Before caching or starting a worker, LifecycleController:
+
+Resolves the registered model.
+Selects the configured GPU-layer limit.
+Evaluates the model configuration using ModelLayerSelector.
+Rejects configurations that are not feasible.
+Checks existing cache and worker state.
+Creates the model mapping if necessary.
+Reserves the active-model identity.
+Starts the inference worker using the selected GPU-layer configuration.
+Verifies that the worker remains running after startup.
+
+The returned ModelMemoryEstimate represents the selected configuration and its estimated resource requirements.
+
+A feasible estimate does not guarantee successful inference-server allocation.
+
+WORKER OWNERSHIP
+
+LifecycleController coordinates WorkerProcess but does not directly create or terminate subprocesses.
+
+WorkerProcess exclusively owns the inference subprocess.
+
+If startup fails and the subprocess cannot be cleaned up, lifecycle state and model mapping information must be retained for safe recovery.
+
+MODEL INSPECTION AND SELECTION
+
+inspect_model() obtains GGUF metadata without loading model weights.
+
+select_model_configuration() delegates configuration selection to ModelLayerSelector using the supplied ResourceBudget.
+
+CACHE MANAGEMENT
+
+cache_model() delegates memory mapping operations to the injected RAMCacheManager.
+
+Only one model may be cached at a time.
+
+Cache residency and inference residency remain separate concepts.
+
+MODEL UNREGISTRATION
+
+A model must be unloaded before its registration is removed when it owns active or cached resources.
+
+Failed resource cleanup must prevent unsafe registry removal.
+
+STATUS REPORTING
+
+get_status() provides an atomic snapshot of lifecycle information, including:
+
+Cached model count.
+Active model identity.
+Worker running state.
+
+ARCHITECTURAL RESTRICTIONS
+
+Does not construct or own ModelRegistry.
+Does not construct or own RAMCacheManager.
+Does not directly create or terminate subprocesses.
+Does not independently calculate system resource budgets.
+Does not bypass resource feasibility evaluation during loading.
+Does not permit multiple resident inference models.
 
 12.3 MODEL REGISTRY
 
@@ -1251,6 +1316,15 @@ Coordinate model loading through LifecycleController.
 Use the active backend exposed through the lifecycle.
 Preserve single-worker enforcement.
 Respect resource-management decisions.
+APPLICATION COORDINATION
+
+VRAMdManager owns the InferenceScheduler and coordinates its relationship with LifecycleController.
+
+The scheduler does not independently obtain resource budgets, select GPU configurations, load models or unload models.
+
+Any future execution mechanism must request model lifecycle operations through the established manager/lifecycle coordination path.
+
+Backend dispatch remains future implementation work.
 
 ARCHITECTURAL RESTRICTIONS
 
@@ -1295,30 +1369,55 @@ It does not create or terminate the server subprocess.
 
 12.13 OWNERSHIP SUMMARY
 
-VRAMdManager Owns application-level components and coordinates them.
+VRAMdManager
 
-LifecycleController Coordinates model lifecycle using injected dependencies.
+Owns application-level components and coordinates application behaviour.
 
-WorkerProcess Owns the inference subprocess.
+ModelRegistry
 
-LlamaCppBackend Owns HTTP communication with the running server.
+Owns model registration metadata.
 
-ModelRegistry Owns model registration metadata.
+RAMCacheManager
 
-RAMCacheManager Owns memory mappings and cache resources.
+Owns read-only memory mappings and cache tracking.
 
-ModelMetadataInspector Inspects GGUF metadata without loading weights.
+LifecycleController
 
-ResourceBudgetCalculator Calculates safe resource limits.
+Coordinates model lifecycle, resource-aware configuration selection, caching and worker startup/shutdown.
 
-ModelMemoryEstimator Estimates model resource requirements.
+WorkerProcess
 
-ModelLayerSelector Selects feasible inference configurations.
+Exclusively owns the inference subprocess.
 
-SystemMonitor / GPUMonitor Provide passive measurements only.
+LlamaCppBackend
 
-InferenceScheduler Coordinates inference requests and queue execution.
+Owns HTTP communication with the running inference server.
 
+ModelMetadataInspector
+
+Inspects GGUF metadata without loading model weights.
+
+ResourceBudgetCalculator
+
+Calculates safe resource limits using passive measurements.
+
+ModelMemoryEstimator
+
+Estimates model resource requirements.
+
+ModelLayerSelector
+
+Selects feasible CPU/GPU inference configurations.
+
+SystemMonitor / GPUMonitor
+
+Provide passive resource measurements only.
+
+InferenceScheduler
+
+Manages inference request registration, queueing, scheduling state and history.
+
+VRAMdManager coordinates the scheduler with application components. Future execution must respect LifecycleController decisions.
 ===============================================================================
 
 ERROR HANDLING AND RESOURCE CLEANUP
@@ -1327,11 +1426,24 @@ Error handling must preserve application state and resource ownership.
 
 13.1 STARTUP FAILURES
 
-Startup failures must trigger cleanup of components that have already started.
+Model startup is coordinated by LifecycleController.
 
-Failed worker startup must attempt subprocess cleanup.
+Resource feasibility must be evaluated before model caching or worker startup.
 
+If worker startup fails:
+
+Cleanup must be attempted through WorkerProcess.
 Process references must not be discarded when cleanup fails.
+Lifecycle state must be retained while a subprocess remains tracked.
+Model mappings must be preserved when necessary for safe cleanup.
+Cache entries created by the failed loading attempt may only be removed when worker cleanup has succeeded and no process remains tracked.
+Pre-existing cache mappings must not be removed by failed startup cleanup.
+
+Cleanup failures must be reported without silently losing the original startup error.
+
+A worker that remains tracked after failed startup must prevent another model from loading.
+
+Worker termination and GPU memory reclamation remain separate verification conditions.
 
 13.2 MEMORY CLEANUP
 
@@ -1420,17 +1532,21 @@ The following decisions are established and must not be changed casually.
  - Model mappings and inference residency are separate concepts.
 
 14.4 INFERENCE ARCHITECTURE
-
- - llama-server is the primary backend.
+ - llama-server is the primary inference backend.
  - The inference backend does not own the server subprocess.
  - WorkerProcess exclusively owns subprocess lifecycle.
  - LifecycleController coordinates model lifecycle.
+ - VRAMdManager coordinates application-level model loading decisions and component interactions.
+ - Model loading requires a current ResourceBudget.
+ - Model configuration feasibility must be evaluated before caching or worker startup.
+ - Only one inference model may be resident at a time.
+ - Only one inference worker/server may be active at a time.
  - InferenceScheduler manages request registration, queueing, scheduling and history.
  - Scheduler shared state is protected by threading.RLock.
  - Terminal request history is subject to configurable retention.
  - Queued and running requests must never be pruned.
  - Scheduler execution and backend dispatch remain future integration work.
- - Scheduling must respect lifecycle and resource-management decisions.
+ - Scheduling must respect LifecycleController and resource-management decisions.
  - No component may bypass single-model or single-worker enforcement.
 
 14.5 COMPONENT OWNERSHIP
